@@ -1,0 +1,19 @@
+# PlatformIO
+.pio/
+
+# VS Code
+.vscode/
+
+# ESP-IDF managed components
+managed_components/
+
+# Temporários
+temp-ftp/
+test/
+
+# Backups
+*.old
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

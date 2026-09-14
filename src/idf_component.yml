@@ -1,0 +1,3 @@
+dependencies:
+  espressif/mqtt: "*"
+  espressif/led_strip: "*"
