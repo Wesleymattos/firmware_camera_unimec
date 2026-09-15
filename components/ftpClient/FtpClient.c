@@ -4,8 +4,8 @@
  *
  *
  * @note
- * Copyright © 2019 Evgeniy Ivanov. Contacts: <strelok1290@gmail.com>
- * Copyright © 1996-2001, 2013, 2016 Thomas Pfau, tfpfau@gmail.com
+ * Copyright ï¿½ 2019 Evgeniy Ivanov. Contacts: <strelok1290@gmail.com>
+ * Copyright ï¿½ 1996-2001, 2013, 2016 Thomas Pfau, tfpfau@gmail.com
  * All rights reserved.
  * @note
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -428,6 +428,22 @@ static int openPort(NetBuf_t* nControl, NetBuf_t** nData, int mode, int dir)
 		cp++;
 		unsigned int v[6];
 		sscanf(cp,"%u,%u,%u,%u,%u,%u",&v[2],&v[3],&v[4],&v[5],&v[0],&v[1]);
+
+		ESP_LOGI(
+    "FTP_CLIENT",
+    "PASV resposta: %s",
+    nControl->response
+);
+
+ESP_LOGI(
+    "FTP_CLIENT",
+    "PASV destino: %u.%u.%u.%u:%u",
+    v[2],
+    v[3],
+    v[4],
+    v[5],
+    (v[0] << 8) | v[1]
+);
 		sin.sa.sa_data[2] = v[2];
 		sin.sa.sa_data[3] = v[3];
 		sin.sa.sa_data[4] = v[4];
@@ -1186,86 +1202,145 @@ static int renameFtpClient(const char* src, const char* dst, NetBuf_t* nControl)
  * return 1 if successful, 0 otherwise
  */
 static int accessFtpClient(const char* path, int typ, int mode, NetBuf_t* nControl,
-	NetBuf_t** nData)
+    NetBuf_t** nData)
 {
-	if ((path == NULL) &&
-		((typ == FTP_CLIENT_FILE_WRITE) || (typ == FTP_CLIENT_FILE_READ))) {
-		sprintf(nControl->response,
-					"Missing path argument for file transfer\n");
-		return 0;
-	}
-	char buf[FTP_CLIENT_TEMP_BUFFER_SIZE];
-	sprintf(buf, "TYPE %c", mode);
-	if (!sendCommand(buf, '2', nControl))
-		return 0;
-	int dir;
-	switch (typ) {
-		case FTP_CLIENT_DIR:
-		{
-			strcpy(buf, "NLST");
-			dir = FTP_CLIENT_READ;
-		}
-		break;
+    if ((path == NULL) &&
+        ((typ == FTP_CLIENT_FILE_WRITE) || (typ == FTP_CLIENT_FILE_READ))) {
+        sprintf(nControl->response,
+                    "Missing path argument for file transfer\n");
+        return 0;
+    }
 
-		case FTP_CLIENT_DIR_VERBOSE:
-		{
-			strcpy(buf, "LIST");
-			dir = FTP_CLIENT_READ;
-		}
-		break;
+    char buf[FTP_CLIENT_TEMP_BUFFER_SIZE];
 
-		case FTP_CLIENT_FILE_READ:
-		{
-			strcpy(buf, "RETR");
-			dir = FTP_CLIENT_READ;
-		}
-		break;
+    sprintf(buf, "TYPE %c", mode);
 
-		case FTP_CLIENT_FILE_WRITE:
-		{
-			strcpy(buf, "STOR");
-			dir = FTP_CLIENT_WRITE;
-		}
-		break;
+    if (!sendCommand(buf, '2', nControl))
+        return 0;
 
-		case FTP_CLIENT_MLSD:
-		{
-			strcpy(buf, "MLSD");
-			dir = FTP_CLIENT_READ;
-		}
-		break;
+    int dir;
 
-		default:
-		{
-			sprintf(nControl->response, "Invalid open type %d\n", typ);
-			return 0;
-		}
-	}
+    switch (typ) {
 
-	if (path != NULL) {
-		int i = strlen(buf);
-		buf[i++] = ' ';
-		if ((strlen(path) + i + 1) >= sizeof(buf))
-			return 0;
-		strcpy(&buf[i], path);
-	}
+        case FTP_CLIENT_DIR:
+        {
+            strcpy(buf, "NLST");
+            dir = FTP_CLIENT_READ;
+        }
+        break;
 
-	if (openPort(nControl, nData, mode, dir) == -1)
-		return 0;
-	if (!sendCommand(buf, '1', nControl)) {
-		closeFtpClient(*nData);
-		*nData = NULL;
-		return 0;
-	}
-	if (nControl->cmode == FTP_CLIENT_ACTIVE) {
-		if (!acceptConnection(*nData,nControl)) {
-			closeFtpClient(*nData);
-			*nData = NULL;
-			nControl->data = NULL;
-			return 0;
-		}
-	}
-	return 1;
+        case FTP_CLIENT_DIR_VERBOSE:
+        {
+            strcpy(buf, "LIST");
+            dir = FTP_CLIENT_READ;
+        }
+        break;
+
+        case FTP_CLIENT_FILE_READ:
+        {
+            strcpy(buf, "RETR");
+            dir = FTP_CLIENT_READ;
+        }
+        break;
+
+        case FTP_CLIENT_FILE_WRITE:
+        {
+            strcpy(buf, "STOR");
+            dir = FTP_CLIENT_WRITE;
+        }
+        break;
+
+        case FTP_CLIENT_MLSD:
+        {
+            strcpy(buf, "MLSD");
+            dir = FTP_CLIENT_READ;
+        }
+        break;
+
+        default:
+        {
+            sprintf(nControl->response, "Invalid open type %d\n", typ);
+            return 0;
+        }
+    }
+
+    if (path != NULL) {
+
+        int i = strlen(buf);
+
+        buf[i++] = ' ';
+
+        if ((strlen(path) + i + 1) >= sizeof(buf))
+            return 0;
+
+        strcpy(&buf[i], path);
+    }
+
+    ESP_LOGI(
+        "FTP_CLIENT",
+        "Abrindo conexao de dados..."
+    );
+
+    if (openPort(nControl, nData, mode, dir) == -1) {
+
+        ESP_LOGE(
+            "FTP_CLIENT",
+            "Falha ao abrir conexao de dados!"
+        );
+
+        return 0;
+    }
+
+    ESP_LOGI(
+        "FTP_CLIENT",
+        "Conexao de dados estabelecida!"
+    );
+
+    ESP_LOGI(
+        "FTP_CLIENT",
+        "Enviando comando: %s",
+        buf
+    );
+
+    if (!sendCommand(buf, '1', nControl)) {
+
+        ESP_LOGE(
+            "FTP_CLIENT",
+            "Servidor recusou comando: %s",
+            buf
+        );
+
+        ESP_LOGE(
+            "FTP_CLIENT",
+            "Resposta FTP: %s",
+            nControl->response
+        );
+
+        closeFtpClient(*nData);
+        *nData = NULL;
+
+        return 0;
+    }
+
+    ESP_LOGI(
+        "FTP_CLIENT",
+        "Servidor aceitou transferencia: %s",
+        nControl->response
+    );
+
+    if (nControl->cmode == FTP_CLIENT_ACTIVE) {
+
+        if (!acceptConnection(*nData, nControl)) {
+
+            closeFtpClient(*nData);
+            *nData = NULL;
+            nControl->data = NULL;
+
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 
@@ -1308,26 +1383,116 @@ static int readFtpClient(void* buf, int max, NetBuf_t* nData)
  */
 static int writeFtpClient(const void* buf, int len, NetBuf_t* nData)
 {
-	int i = 0;
-	if (nData->dir != FTP_CLIENT_WRITE)
-		return 0;
-	if (nData->buf)
-		i = writeLine(buf, len, nData);
-	else {
-		socketWait(nData);
-		i = send(nData->handle, buf, len, 0);
-	}
-	if (i == -1)
-		return 0;
-	nData->xfered += i;
-	if (nData->idlecb && nData->cbbytes) {
-		nData->xfered1 += i;
-		if (nData->xfered1 > nData->cbbytes) {
-			nData->idlecb(nData, nData->xfered, nData->idlearg);
-			nData->xfered1 = 0;
-		}
-	}
-	return i;
+    if (nData == NULL)
+        return 0;
+
+    if (nData->dir != FTP_CLIENT_WRITE)
+        return 0;
+
+    if (nData->buf) {
+
+        int i = writeLine(buf, len, nData);
+
+        if (i == -1)
+            return 0;
+
+        nData->xfered += i;
+
+        if (nData->idlecb && nData->cbbytes) {
+            nData->xfered1 += i;
+
+            if (nData->xfered1 > nData->cbbytes) {
+                nData->idlecb(
+                    nData,
+                    nData->xfered,
+                    nData->idlearg
+                );
+
+                nData->xfered1 = 0;
+            }
+        }
+
+        return i;
+    }
+
+    /*
+     * Modo BINARIO
+     *
+     * TCP pode enviar menos bytes do que foi solicitado.
+     * Por isso continuamos enviando atÃ© completar todo o buffer.
+     */
+
+    const char* data = (const char*)buf;
+    int total_sent = 0;
+
+    while (total_sent < len) {
+
+        if (!socketWait(nData)) {
+            ESP_LOGE(
+                "FTP_CLIENT",
+                "socketWait() falhou durante envio"
+            );
+            return total_sent;
+        }
+
+        int sent = send(
+            nData->handle,
+            data + total_sent,
+            len - total_sent,
+            0
+        );
+
+        if (sent < 0) {
+
+            ESP_LOGE(
+                "FTP_CLIENT",
+                "send() falhou: errno=%d (%s)",
+                errno,
+                strerror(errno)
+            );
+
+            return total_sent;
+        }
+
+        if (sent == 0) {
+
+            ESP_LOGE(
+                "FTP_CLIENT",
+                "send() retornou 0 bytes"
+            );
+
+            return total_sent;
+        }
+
+        total_sent += sent;
+
+        ESP_LOGD(
+            "FTP_CLIENT",
+            "Enviado: %d/%d bytes",
+            total_sent,
+            len
+        );
+    }
+
+    nData->xfered += total_sent;
+
+    if (nData->idlecb && nData->cbbytes) {
+
+        nData->xfered1 += total_sent;
+
+        if (nData->xfered1 > nData->cbbytes) {
+
+            nData->idlecb(
+                nData,
+                nData->xfered,
+                nData->idlearg
+            );
+
+            nData->xfered1 = 0;
+        }
+    }
+
+    return total_sent;
 }
 
 

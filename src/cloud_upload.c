@@ -36,6 +36,7 @@ static const char *TAG = "CLOUD_UPLOAD";
 /* Nome remoto */
 #define REMOTE_FILE         "photo_01.jpg"
 
+#define CAMERA_ROOT_FOLDER  "unimec-cameras"
 
 /* ============================================================
  * TASK
@@ -167,89 +168,146 @@ bool cloud_upload_test(void)
 
     ESP_LOGI(TAG, "Login FTP realizado!");
 
+/* --------------------------------------------------------
+ * 5. Criar / entrar na pasta raiz das cameras
+ * -------------------------------------------------------- */
 
-    /* --------------------------------------------------------
-     * 5. Criar / entrar na pasta do equipamento
-     * -------------------------------------------------------- */
+ESP_LOGI(TAG, "Verificando pasta raiz das cameras...");
+ESP_LOGI(TAG, "Pasta: %s", CAMERA_ROOT_FOLDER);
 
-    ESP_LOGI(TAG, "Verificando pasta do equipamento...");
-    ESP_LOGI(TAG, "Pasta: %s", DEVICE_NAME);
+int result = ftp->ftpClientChangeDir(
+    CAMERA_ROOT_FOLDER,
+    ftp_netbuf
+);
+
+if (result != 1)
+{
+    ESP_LOGW(
+        TAG,
+        "Pasta raiz nao existe. Criando..."
+    );
+
+    result = ftp->ftpClientMakeDir(
+        CAMERA_ROOT_FOLDER,
+        ftp_netbuf
+    );
+
+    if (result != 1)
+    {
+        ESP_LOGE(
+            TAG,
+            "Nao foi possivel criar a pasta: %s",
+            CAMERA_ROOT_FOLDER
+        );
+
+        ftp->ftpClientQuit(ftp_netbuf);
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Pasta raiz criada: %s",
+        CAMERA_ROOT_FOLDER
+    );
+
+    result = ftp->ftpClientChangeDir(
+        CAMERA_ROOT_FOLDER,
+        ftp_netbuf
+    );
+
+    if (result != 1)
+    {
+        ESP_LOGE(
+            TAG,
+            "Nao foi possivel entrar na pasta: %s",
+            CAMERA_ROOT_FOLDER
+        );
+
+        ftp->ftpClientQuit(ftp_netbuf);
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+}
+
+ESP_LOGI(
+    TAG,
+    "Dentro da pasta raiz: %s",
+    CAMERA_ROOT_FOLDER
+);
 
 
-    int result = ftp->ftpClientChangeDir(
+/* --------------------------------------------------------
+ * 5.1 Criar / entrar na pasta do equipamento
+ * -------------------------------------------------------- */
+
+ESP_LOGI(TAG, "Verificando pasta do equipamento...");
+ESP_LOGI(TAG, "Pasta: %s", DEVICE_NAME);
+
+result = ftp->ftpClientChangeDir(
+    DEVICE_NAME,
+    ftp_netbuf
+);
+
+if (result != 1)
+{
+    ESP_LOGW(
+        TAG,
+        "Pasta do equipamento nao existe. Criando..."
+    );
+
+    result = ftp->ftpClientMakeDir(
         DEVICE_NAME,
         ftp_netbuf
     );
 
-
     if (result != 1)
     {
-        ESP_LOGW(
+        ESP_LOGE(
             TAG,
-            "Pasta do equipamento nao existe. Criando..."
-        );
-
-
-        result = ftp->ftpClientMakeDir(
-            DEVICE_NAME,
-            ftp_netbuf
-        );
-
-
-        if (result != 1)
-        {
-            ESP_LOGE(
-                TAG,
-                "Nao foi possivel criar a pasta: %s",
-                DEVICE_NAME
-            );
-
-            ftp->ftpClientQuit(ftp_netbuf);
-
-            ftp_netbuf = NULL;
-
-            return false;
-        }
-
-
-        ESP_LOGI(
-            TAG,
-            "Pasta criada: %s",
+            "Nao foi possivel criar a pasta: %s",
             DEVICE_NAME
         );
 
+        ftp->ftpClientQuit(ftp_netbuf);
+        ftp_netbuf = NULL;
 
-        /* Depois de criar, entra nela */
-
-        result = ftp->ftpClientChangeDir(
-            DEVICE_NAME,
-            ftp_netbuf
-        );
-
-
-        if (result != 1)
-        {
-            ESP_LOGE(
-                TAG,
-                "Nao foi possivel entrar na pasta: %s",
-                DEVICE_NAME
-            );
-
-            ftp->ftpClientQuit(ftp_netbuf);
-
-            ftp_netbuf = NULL;
-
-            return false;
-        }
+        return false;
     }
-
 
     ESP_LOGI(
         TAG,
-        "Dentro da pasta: %s",
+        "Pasta criada: %s",
         DEVICE_NAME
     );
 
+    result = ftp->ftpClientChangeDir(
+        DEVICE_NAME,
+        ftp_netbuf
+    );
+
+    if (result != 1)
+    {
+        ESP_LOGE(
+            TAG,
+            "Nao foi possivel entrar na pasta: %s",
+            DEVICE_NAME
+        );
+
+        ftp->ftpClientQuit(ftp_netbuf);
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+}
+
+ESP_LOGI(
+    TAG,
+    "Dentro da pasta: %s",
+    DEVICE_NAME
+);
 
     /* --------------------------------------------------------
      * 6. Criar / entrar na pasta do evento
