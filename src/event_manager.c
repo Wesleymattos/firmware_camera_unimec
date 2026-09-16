@@ -7,11 +7,17 @@
 #include "relay.h"
 #include "event_camera.h"
 #include "mqtt_manager.h"
+#include "cloud_upload.h"
+
 
 static const char *TAG = "EVENT";
 
 static bool alarme_ativo = false;
 
+
+/* ============================================================
+ * INICIALIZACAO
+ * ============================================================ */
 
 void event_manager_init(void)
 {
@@ -24,11 +30,10 @@ void event_manager_init(void)
 }
 
 
-/*
- * Acionamento manual do alarme.
- *
- * Chamado pelo MQTT quando recebe ON.
- */
+/* ============================================================
+ * ACIONAMENTO MANUAL
+ * ============================================================ */
+
 void event_manager_acionar(void)
 {
     if (alarme_ativo)
@@ -40,6 +45,7 @@ void event_manager_acionar(void)
 
         return;
     }
+
 
     ESP_LOGW(
         TAG,
@@ -56,15 +62,17 @@ void event_manager_acionar(void)
         "========================================"
     );
 
+
     alarme_ativo = true;
 
     relay_on();
 }
 
 
-/*
- * Pessoa detectada.
- */
+/* ============================================================
+ * PESSOA DETECTADA
+ * ============================================================ */
+
 void event_manager_pessoa_detectada(void)
 {
     if (alarme_ativo)
@@ -76,6 +84,7 @@ void event_manager_pessoa_detectada(void)
 
         return;
     }
+
 
     ESP_LOGW(
         TAG,
@@ -92,17 +101,21 @@ void event_manager_pessoa_detectada(void)
         "========================================"
     );
 
+
     alarme_ativo = true;
 
-    /*
-     * Liga relé e LED.
-     */
+
+    /* --------------------------------------------------------
+     * Liga rele
+     * -------------------------------------------------------- */
+
     relay_on();
 
 
-    /*
-     * Envia alerta MQTT.
-     */
+    /* --------------------------------------------------------
+     * Envia alerta MQTT
+     * -------------------------------------------------------- */
+
     if (mqtt_manager_publish_alert())
     {
         ESP_LOGI(
@@ -119,32 +132,71 @@ void event_manager_pessoa_detectada(void)
     }
 
 
-    /*
-     * Captura as fotos.
-     */
-    bool captura_ok =
-        event_camera_capture_event();
+    /* --------------------------------------------------------
+     * Captura evento
+     * -------------------------------------------------------- */
 
-    if (captura_ok)
-    {
-        ESP_LOGI(
-            TAG,
-            "Captura das 10 fotos concluida com sucesso"
+    unsigned int event_id = 0;
+
+
+    bool captura_ok =
+        event_camera_capture_event(
+            &event_id
         );
-    }
-    else
+
+
+    if (!captura_ok)
     {
         ESP_LOGE(
             TAG,
             "Falha durante a captura das fotos"
         );
+
+        return;
     }
+
+
+    ESP_LOGI(
+        TAG,
+        "Captura das 10 fotos concluida com sucesso"
+    );
+
+
+    ESP_LOGI(
+        TAG,
+        "Evento capturado: %06u",
+        event_id
+    );
+
+
+    /* --------------------------------------------------------
+     * Inicia upload em task separada
+     * -------------------------------------------------------- */
+
+    ESP_LOGI(
+        TAG,
+        "Iniciando task de upload do evento %06u...",
+        event_id
+    );
+
+
+    cloud_upload_start_event(
+        event_id
+    );
+
+
+    ESP_LOGI(
+        TAG,
+        "Task de upload iniciada para o evento %06u",
+        event_id
+    );
 }
 
 
-/*
- * Processamento dos eventos.
- */
+/* ============================================================
+ * PROCESSAMENTO
+ * ============================================================ */
+
 void event_manager_process(void)
 {
     /*
@@ -152,24 +204,20 @@ void event_manager_process(void)
      *
      * - fotos a cada 5 segundos
      * - fila de eventos
-     * - upload
+     * - upload em task separada
      * - comandos
      */
 }
 
 
-/*
- * Desarma o alarme.
- */
+/* ============================================================
+ * DESARMAR
+ * ============================================================ */
+
 void event_manager_desarmar(void)
 {
     if (!alarme_ativo)
     {
-        /*
-         * Mesmo que o estado lógico diga OFF,
-         * garantimos que o relé físico também
-         * fique desligado.
-         */
         ESP_LOGW(
             TAG,
             "Desarmar solicitado, mas alarme ja esta desligado"
@@ -179,6 +227,7 @@ void event_manager_desarmar(void)
 
         return;
     }
+
 
     ESP_LOGW(
         TAG,
@@ -195,13 +244,8 @@ void event_manager_desarmar(void)
         "========================================"
     );
 
-    /*
-     * Primeiro desliga fisicamente.
-     */
+
     relay_off();
 
-    /*
-     * Depois atualiza o estado lógico.
-     */
     alarme_ativo = false;
 }

@@ -230,12 +230,33 @@ void event_camera_init(void)
 }
 
 
-bool event_camera_capture_event(void)
+bool event_camera_capture_event(unsigned int *event_id)
 {
+    /*
+     * Verifica se o ponteiro recebido e valido.
+     */
+    if (event_id == NULL)
+    {
+        ESP_LOGE(
+            TAG,
+            "Ponteiro event_id invalido!"
+        );
+
+        return false;
+    }
+
+
     /*
      * Guarda o ID deste evento.
      */
-    unsigned int event_id = next_event_id;
+    unsigned int current_event_id = next_event_id;
+
+
+    /*
+     * Devolve o ID para quem chamou
+     * esta funcao.
+     */
+    *event_id = current_event_id;
 
 
     ESP_LOGI(
@@ -251,7 +272,7 @@ bool event_camera_capture_event(void)
     ESP_LOGI(
         TAG,
         "Evento: %06u",
-        event_id
+        current_event_id
     );
 
     ESP_LOGI(
@@ -272,12 +293,12 @@ bool event_camera_capture_event(void)
      *
      * /sdcard/events/event_000001/
      */
-    if (!sd_storage_create_event(event_id))
+    if (!sd_storage_create_event(current_event_id))
     {
         ESP_LOGE(
             TAG,
             "Nao foi possivel criar o evento %06u no SD!",
-            event_id
+            current_event_id
         );
 
         return false;
@@ -325,7 +346,7 @@ bool event_camera_capture_event(void)
          */
         bool save_ok =
             sd_storage_save_photo(
-                event_id,
+                current_event_id,
                 i + 1,
                 fb->buf,
                 fb->len
@@ -376,13 +397,13 @@ bool event_camera_capture_event(void)
      *
      * Agora podemos persistir o ID no NVS.
      */
-    if (!event_counter_save(event_id))
+    if (!event_counter_save(current_event_id))
     {
         ESP_LOGE(
             TAG,
             "ATENCAO: evento %06u foi salvo no SD, "
             "mas nao foi possivel salvar o contador no NVS!",
-            event_id
+            current_event_id
         );
 
         return false;
@@ -390,7 +411,7 @@ bool event_camera_capture_event(void)
 
 
     /*
-     * Prepara o próximo evento.
+     * Prepara o proximo evento.
      */
     next_event_id++;
 
@@ -408,7 +429,7 @@ bool event_camera_capture_event(void)
     ESP_LOGI(
         TAG,
         "Evento %06u",
-        event_id
+        current_event_id
     );
 
     ESP_LOGI(

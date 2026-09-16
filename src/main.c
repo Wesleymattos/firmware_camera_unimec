@@ -100,15 +100,7 @@ void app_main(void)
  */
 cloud_upload_init();
 
-/*
- * Inicia o teste FTP em uma task própria.
- */
-ESP_LOGI(
-    "MAIN",
-    "Iniciando teste de upload FTP..."
-);
 
-cloud_upload_start_test();
 
     /*
      * Inicializa servidor HTTP

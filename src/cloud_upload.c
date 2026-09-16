@@ -1,6 +1,7 @@
 #include "cloud_upload.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -23,20 +24,12 @@ static const char *TAG = "CLOUD_UPLOAD";
 
 #define FTP_USER            "nemosftp"
 #define FTP_PASSWORD        "UniMec@FTP2026!"
-
-/* Nome da camera no servidor */
 #define DEVICE_NAME         "unimec-camera-01"
 
-/* Evento que vamos testar */
-#define EVENT_ID            1
-
-/* Arquivo local */
-#define TEST_FILE           "/sdcard/events/event_000001/photo_01.jpg"
-
-/* Nome remoto */
-#define REMOTE_FILE         "photo_01.jpg"
-
 #define CAMERA_ROOT_FOLDER  "unimec-cameras"
+
+#define EVENT_PHOTO_COUNT   10
+
 
 /* ============================================================
  * TASK
@@ -64,298 +57,415 @@ void cloud_upload_init(void)
 
 
 /* ============================================================
- * TESTE DE UPLOAD
+ * FUNCAO AUXILIAR
  * ============================================================ */
 
-bool cloud_upload_test(void)
+static bool ftp_entrar_ou_criar_pasta(
+    FtpClient *ftp,
+    const char *folder
+)
 {
-    ESP_LOGI(TAG, "======================================");
-    ESP_LOGI(TAG, "Iniciando teste de upload FTP...");
-    ESP_LOGI(TAG, "======================================");
+    int result;
 
 
-    /* --------------------------------------------------------
-     * 1. Verifica se a foto existe no SD
-     * -------------------------------------------------------- */
+    ESP_LOGI(
+        TAG,
+        "Verificando pasta: %s",
+        folder
+    );
 
-    FILE *file = fopen(TEST_FILE, "rb");
 
-    if (file == NULL)
+    /*
+     * Tenta entrar na pasta.
+     */
+    result = ftp->ftpClientChangeDir(
+        folder,
+        ftp_netbuf
+    );
+
+
+    /*
+     * Se conseguiu, a pasta ja existe.
+     */
+    if (result == 1)
     {
-        ESP_LOGE(TAG, "Nao foi possivel abrir:");
-        ESP_LOGE(TAG, "%s", TEST_FILE);
+        ESP_LOGI(
+            TAG,
+            "Dentro da pasta: %s",
+            folder
+        );
+
+        return true;
+    }
+
+
+    /*
+     * A pasta nao existe.
+     * Vamos criar.
+     */
+    ESP_LOGW(
+        TAG,
+        "Pasta nao existe. Criando: %s",
+        folder
+    );
+
+
+    result = ftp->ftpClientMakeDir(
+        folder,
+        ftp_netbuf
+    );
+
+
+    if (result != 1)
+    {
+        ESP_LOGE(
+            TAG,
+            "Nao foi possivel criar a pasta: %s",
+            folder
+        );
 
         return false;
     }
 
 
-    fseek(file, 0, SEEK_END);
-
-    long file_size = ftell(file);
-
-    fseek(file, 0, SEEK_SET);
-
-    fclose(file);
+    ESP_LOGI(
+        TAG,
+        "Pasta criada: %s",
+        folder
+    );
 
 
-    ESP_LOGI(TAG, "Arquivo encontrado!");
-    ESP_LOGI(TAG, "Arquivo: %s", TEST_FILE);
-    ESP_LOGI(TAG, "Tamanho: %ld bytes", file_size);
+    /*
+     * Entra na pasta criada.
+     */
+    result = ftp->ftpClientChangeDir(
+        folder,
+        ftp_netbuf
+    );
+
+
+    if (result != 1)
+    {
+        ESP_LOGE(
+            TAG,
+            "Nao foi possivel entrar na pasta: %s",
+            folder
+        );
+
+        return false;
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Dentro da pasta: %s",
+        folder
+    );
+
+
+    return true;
+}
+
+
+/* ============================================================
+ * UPLOAD DE UM EVENTO
+ * ============================================================ */
+
+bool cloud_upload_event(unsigned int event_id)
+{
+    char event_folder[32];
+    char local_file[128];
+    char remote_file[32];
+
+
+    ESP_LOGI(
+        TAG,
+        "======================================"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "INICIANDO UPLOAD DO EVENTO"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Evento: %06u",
+        event_id
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Fotos: %d",
+        EVENT_PHOTO_COUNT
+    );
+
+    ESP_LOGI(
+        TAG,
+        "======================================"
+    );
 
 
     /* --------------------------------------------------------
-     * 2. Cria cliente FTP
+     * 1. Cria cliente FTP
      * -------------------------------------------------------- */
 
     FtpClient *ftp = getFtpClient();
 
+
     if (ftp == NULL)
     {
-        ESP_LOGE(TAG, "Falha ao criar cliente FTP!");
+        ESP_LOGE(
+            TAG,
+            "Falha ao criar cliente FTP!"
+        );
 
         return false;
     }
 
 
     /* --------------------------------------------------------
-     * 3. Conecta ao servidor
+     * 2. Conecta
      * -------------------------------------------------------- */
 
-    ESP_LOGI(TAG, "Conectando ao servidor FTP...");
+    ESP_LOGI(
+        TAG,
+        "Conectando ao servidor FTP..."
+    );
 
-    int connect = ftp->ftpClientConnect(
+
+    int result = ftp->ftpClientConnect(
         FTP_SERVER,
         FTP_PORT,
         &ftp_netbuf
     );
 
 
-    if (connect == 0)
+    if (result == 0)
     {
-        ESP_LOGE(TAG, "Falha ao conectar no FTP!");
+        ESP_LOGE(
+            TAG,
+            "Falha ao conectar no FTP!"
+        );
 
         return false;
     }
 
 
-    ESP_LOGI(TAG, "Conexao FTP estabelecida!");
+    ESP_LOGI(
+        TAG,
+        "Conexao FTP estabelecida!"
+    );
 
 
     /* --------------------------------------------------------
-     * 4. Login
+     * 3. Login
      * -------------------------------------------------------- */
 
-    ESP_LOGI(TAG, "Autenticando...");
+    ESP_LOGI(
+        TAG,
+        "Autenticando..."
+    );
 
-    int login = ftp->ftpClientLogin(
+
+    result = ftp->ftpClientLogin(
         FTP_USER,
         FTP_PASSWORD,
         ftp_netbuf
     );
 
 
-    if (login == 0)
-    {
-        ESP_LOGE(TAG, "Falha na autenticacao FTP!");
-
-        ftp->ftpClientQuit(ftp_netbuf);
-
-        ftp_netbuf = NULL;
-
-        return false;
-    }
-
-
-    ESP_LOGI(TAG, "Login FTP realizado!");
-
-/* --------------------------------------------------------
- * 5. Criar / entrar na pasta raiz das cameras
- * -------------------------------------------------------- */
-
-ESP_LOGI(TAG, "Verificando pasta raiz das cameras...");
-ESP_LOGI(TAG, "Pasta: %s", CAMERA_ROOT_FOLDER);
-
-int result = ftp->ftpClientChangeDir(
-    CAMERA_ROOT_FOLDER,
-    ftp_netbuf
-);
-
-if (result != 1)
-{
-    ESP_LOGW(
-        TAG,
-        "Pasta raiz nao existe. Criando..."
-    );
-
-    result = ftp->ftpClientMakeDir(
-        CAMERA_ROOT_FOLDER,
-        ftp_netbuf
-    );
-
-    if (result != 1)
+    if (result == 0)
     {
         ESP_LOGE(
             TAG,
-            "Nao foi possivel criar a pasta: %s",
-            CAMERA_ROOT_FOLDER
+            "Falha na autenticacao FTP!"
         );
 
         ftp->ftpClientQuit(ftp_netbuf);
+
         ftp_netbuf = NULL;
 
         return false;
     }
+
 
     ESP_LOGI(
         TAG,
-        "Pasta raiz criada: %s",
-        CAMERA_ROOT_FOLDER
+        "Login FTP realizado!"
     );
 
-    result = ftp->ftpClientChangeDir(
-        CAMERA_ROOT_FOLDER,
-        ftp_netbuf
-    );
-
-    if (result != 1)
-    {
-        ESP_LOGE(
-            TAG,
-            "Nao foi possivel entrar na pasta: %s",
-            CAMERA_ROOT_FOLDER
-        );
-
-        ftp->ftpClientQuit(ftp_netbuf);
-        ftp_netbuf = NULL;
-
-        return false;
-    }
-}
-
-ESP_LOGI(
-    TAG,
-    "Dentro da pasta raiz: %s",
-    CAMERA_ROOT_FOLDER
-);
-
-
-/* --------------------------------------------------------
- * 5.1 Criar / entrar na pasta do equipamento
- * -------------------------------------------------------- */
-
-ESP_LOGI(TAG, "Verificando pasta do equipamento...");
-ESP_LOGI(TAG, "Pasta: %s", DEVICE_NAME);
-
-result = ftp->ftpClientChangeDir(
-    DEVICE_NAME,
-    ftp_netbuf
-);
-
-if (result != 1)
-{
-    ESP_LOGW(
-        TAG,
-        "Pasta do equipamento nao existe. Criando..."
-    );
-
-    result = ftp->ftpClientMakeDir(
-        DEVICE_NAME,
-        ftp_netbuf
-    );
-
-    if (result != 1)
-    {
-        ESP_LOGE(
-            TAG,
-            "Nao foi possivel criar a pasta: %s",
-            DEVICE_NAME
-        );
-
-        ftp->ftpClientQuit(ftp_netbuf);
-        ftp_netbuf = NULL;
-
-        return false;
-    }
-
-    ESP_LOGI(
-        TAG,
-        "Pasta criada: %s",
-        DEVICE_NAME
-    );
-
-    result = ftp->ftpClientChangeDir(
-        DEVICE_NAME,
-        ftp_netbuf
-    );
-
-    if (result != 1)
-    {
-        ESP_LOGE(
-            TAG,
-            "Nao foi possivel entrar na pasta: %s",
-            DEVICE_NAME
-        );
-
-        ftp->ftpClientQuit(ftp_netbuf);
-        ftp_netbuf = NULL;
-
-        return false;
-    }
-}
-
-ESP_LOGI(
-    TAG,
-    "Dentro da pasta: %s",
-    DEVICE_NAME
-);
 
     /* --------------------------------------------------------
-     * 6. Criar / entrar na pasta do evento
+     * 4. Pasta raiz
      * -------------------------------------------------------- */
 
-    char event_folder[32];
+    if (!ftp_entrar_ou_criar_pasta(
+            ftp,
+            CAMERA_ROOT_FOLDER))
+    {
+        ftp->ftpClientQuit(ftp_netbuf);
+
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+
+
+    /* --------------------------------------------------------
+     * 5. Pasta da camera
+     * -------------------------------------------------------- */
+
+    if (!ftp_entrar_ou_criar_pasta(
+            ftp,
+            DEVICE_NAME))
+    {
+        ftp->ftpClientQuit(ftp_netbuf);
+
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+
+
+    /* --------------------------------------------------------
+     * 6. Nome da pasta do evento
+     * -------------------------------------------------------- */
 
     snprintf(
         event_folder,
         sizeof(event_folder),
         "event_%06u",
-        EVENT_ID
+        event_id
     );
 
 
-    ESP_LOGI(
-        TAG,
-        "Verificando pasta do evento: %s",
-        event_folder
-    );
+    /* --------------------------------------------------------
+     * 7. Pasta do evento
+     * -------------------------------------------------------- */
 
-
-    result = ftp->ftpClientChangeDir(
-        event_folder,
-        ftp_netbuf
-    );
-
-
-    if (result != 1)
+    if (!ftp_entrar_ou_criar_pasta(
+            ftp,
+            event_folder))
     {
-        ESP_LOGW(
-            TAG,
-            "Pasta do evento nao existe. Criando..."
+        ftp->ftpClientQuit(ftp_netbuf);
+
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+
+
+    /* --------------------------------------------------------
+     * 8. Envia as 10 fotos
+     * -------------------------------------------------------- */
+
+    for (
+        unsigned int i = 1;
+        i <= EVENT_PHOTO_COUNT;
+        i++
+    )
+    {
+        /*
+         * Caminho local:
+         *
+         * /sdcard/events/event_000003/photo_01.jpg
+         */
+        snprintf(
+            local_file,
+            sizeof(local_file),
+            "/sdcard/events/%s/photo_%02u.jpg",
+            event_folder,
+            i
         );
 
 
-        result = ftp->ftpClientMakeDir(
-            event_folder,
+        /*
+         * Nome remoto:
+         *
+         * photo_01.jpg
+         */
+        snprintf(
+            remote_file,
+            sizeof(remote_file),
+            "photo_%02u.jpg",
+            i
+        );
+
+
+        ESP_LOGI(
+            TAG,
+            "--------------------------------------"
+        );
+
+        ESP_LOGI(
+            TAG,
+            "Enviando foto %u/%d",
+            i,
+            EVENT_PHOTO_COUNT
+        );
+
+        ESP_LOGI(
+            TAG,
+            "Local : %s",
+            local_file
+        );
+
+        ESP_LOGI(
+            TAG,
+            "Remoto: %s",
+            remote_file
+        );
+
+
+        /* ----------------------------------------------------
+         * Verifica se o arquivo existe no SD
+         * ---------------------------------------------------- */
+
+        FILE *file = fopen(
+            local_file,
+            "rb"
+        );
+
+
+        if (file == NULL)
+        {
+            ESP_LOGE(
+                TAG,
+                "Arquivo nao encontrado: %s",
+                local_file
+            );
+
+            ftp->ftpClientQuit(ftp_netbuf);
+
+            ftp_netbuf = NULL;
+
+            return false;
+        }
+
+
+        fclose(file);
+
+
+        /* ----------------------------------------------------
+         * Upload
+         * ---------------------------------------------------- */
+
+        result = ftp->ftpClientPut(
+            local_file,
+            remote_file,
+            FTP_CLIENT_BINARY,
             ftp_netbuf
         );
 
 
-        if (result != 1)
+        if (result <= 0)
         {
             ESP_LOGE(
                 TAG,
-                "Nao foi possivel criar: %s",
-                event_folder
+                "Falha ao enviar foto %u/%d!",
+                i,
+                EVENT_PHOTO_COUNT
             );
 
             ftp->ftpClientQuit(ftp_netbuf);
@@ -368,89 +478,58 @@ ESP_LOGI(
 
         ESP_LOGI(
             TAG,
-            "Pasta criada: %s",
-            event_folder
+            "Foto %u/%d enviada com sucesso!",
+            i,
+            EVENT_PHOTO_COUNT
         );
-
-
-        /* Entra na pasta criada */
-
-        result = ftp->ftpClientChangeDir(
-            event_folder,
-            ftp_netbuf
-        );
-
-
-        if (result != 1)
-        {
-            ESP_LOGE(
-                TAG,
-                "Nao foi possivel entrar em: %s",
-                event_folder
-            );
-
-            ftp->ftpClientQuit(ftp_netbuf);
-
-            ftp_netbuf = NULL;
-
-            return false;
-        }
     }
 
+
+    /* --------------------------------------------------------
+     * 9. Final
+     * -------------------------------------------------------- */
 
     ESP_LOGI(
         TAG,
-        "Dentro da pasta do evento: %s",
+        "======================================"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "UPLOAD DO EVENTO CONCLUIDO!"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Equipamento: %s",
+        DEVICE_NAME
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Evento: %s",
         event_folder
     );
 
+    ESP_LOGI(
+        TAG,
+        "Fotos enviadas: %d",
+        EVENT_PHOTO_COUNT
+    );
 
-    /* --------------------------------------------------------
-     * 7. Upload da foto
-     * -------------------------------------------------------- */
-
-    ESP_LOGI(TAG, "Enviando arquivo...");
-    ESP_LOGI(TAG, "Local : %s", TEST_FILE);
-    ESP_LOGI(TAG, "Remoto: %s", REMOTE_FILE);
-
-
-    result = ftp->ftpClientPut(
-        TEST_FILE,
-        REMOTE_FILE,
-        FTP_CLIENT_BINARY,
-        ftp_netbuf
+    ESP_LOGI(
+        TAG,
+        "======================================"
     );
 
 
-    if (result <= 0)
-    {
-        ESP_LOGE(TAG, "Falha ao enviar arquivo!");
-
-        ftp->ftpClientQuit(ftp_netbuf);
-
-        ftp_netbuf = NULL;
-
-        return false;
-    }
-
-
     /* --------------------------------------------------------
-     * 8. Sucesso
+     * 10. Fecha FTP
      * -------------------------------------------------------- */
 
-    ESP_LOGI(TAG, "======================================");
-    ESP_LOGI(TAG, "UPLOAD FTP CONCLUIDO!");
-    ESP_LOGI(TAG, "Equipamento: %s", DEVICE_NAME);
-    ESP_LOGI(TAG, "Evento: %s", event_folder);
-    ESP_LOGI(TAG, "Arquivo: %s", REMOTE_FILE);
-    ESP_LOGI(TAG, "======================================");
-
-
-    /* --------------------------------------------------------
-     * 9. Fecha conexao
-     * -------------------------------------------------------- */
-
-    ftp->ftpClientQuit(ftp_netbuf);
+    ftp->ftpClientQuit(
+        ftp_netbuf
+    );
 
     ftp_netbuf = NULL;
 
@@ -460,34 +539,244 @@ ESP_LOGI(
 
 
 /* ============================================================
- * TASK FTP
+ * TASK DE UPLOAD DE EVENTO
  * ============================================================ */
 
-static void cloud_upload_test_task(void *arg)
+static void cloud_upload_event_task(void *arg)
 {
-    ESP_LOGI(TAG, "Task FTP iniciada");
+    /*
+     * O event_id foi alocado dinamicamente
+     * antes da criação desta task.
+     */
+    unsigned int event_id =
+        *((unsigned int *)arg);
 
 
-    bool result = cloud_upload_test();
+    /*
+     * Agora que copiamos o valor para uma
+     * variável local, podemos liberar a memória.
+     */
+    free(arg);
+
+
+    ESP_LOGI(
+        TAG,
+        "======================================"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "TASK DE UPLOAD INICIADA"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Evento: %06u",
+        event_id
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Stack: %d bytes",
+        FTP_TASK_STACK_SIZE
+    );
+
+    ESP_LOGI(
+        TAG,
+        "======================================"
+    );
+
+
+    /*
+     * Executa o upload completo.
+     *
+     * Esta funcao agora roda dentro da
+     * task FTP, e nao mais dentro da main_task.
+     */
+    bool result =
+        cloud_upload_event(event_id);
 
 
     if (result)
     {
         ESP_LOGI(
             TAG,
-            "Teste FTP realizado com sucesso!"
+            "======================================"
+        );
+
+        ESP_LOGI(
+            TAG,
+            "UPLOAD DO EVENTO %06u CONCLUIDO!",
+            event_id
+        );
+
+        ESP_LOGI(
+            TAG,
+            "======================================"
         );
     }
     else
     {
         ESP_LOGE(
             TAG,
-            "Teste FTP falhou!"
+            "======================================"
+        );
+
+        ESP_LOGE(
+            TAG,
+            "UPLOAD DO EVENTO %06u FALHOU!",
+            event_id
+        );
+
+        ESP_LOGE(
+            TAG,
+            "======================================"
         );
     }
 
 
-    ESP_LOGI(TAG, "Task FTP finalizada");
+    ESP_LOGI(
+        TAG,
+        "Task FTP finalizada"
+    );
+
+
+    /*
+     * Finaliza a task.
+     */
+    vTaskDelete(NULL);
+}
+
+
+/* ============================================================
+ * INICIA UPLOAD DE EVENTO
+ * ============================================================ */
+
+void cloud_upload_start_event(
+    unsigned int event_id
+)
+{
+    /*
+     * Aloca memoria para passar o event_id
+     * para a nova task.
+     *
+     * Nao podemos passar o endereco de uma
+     * variavel local da funcao, pois ela deixaria
+     * de existir depois que esta funcao terminasse.
+     */
+    unsigned int *event_id_ptr =
+        malloc(sizeof(unsigned int));
+
+
+    if (event_id_ptr == NULL)
+    {
+        ESP_LOGE(
+            TAG,
+            "Falha ao alocar memoria para event_id!"
+        );
+
+        return;
+    }
+
+
+    *event_id_ptr = event_id;
+
+
+    ESP_LOGI(
+        TAG,
+        "Criando task FTP para o evento %06u...",
+        event_id
+    );
+
+
+    BaseType_t result = xTaskCreate(
+        cloud_upload_event_task,
+        "ftp_event",
+        FTP_TASK_STACK_SIZE,
+        event_id_ptr,
+        FTP_TASK_PRIORITY,
+        NULL
+    );
+
+
+    if (result != pdPASS)
+    {
+        ESP_LOGE(
+            TAG,
+            "Falha ao criar task FTP para evento %06u!",
+            event_id
+        );
+
+        /*
+         * Se a task nao foi criada,
+         * precisamos liberar a memoria.
+         */
+        free(event_id_ptr);
+
+        return;
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Task FTP criada para evento %06u!",
+        event_id
+    );
+}
+
+
+/* ============================================================
+ * TESTE FTP ANTIGO
+ * ============================================================ */
+
+bool cloud_upload_test(void)
+{
+    /*
+     * Mantemos a funcao antiga temporariamente.
+     *
+     * O novo sistema usa cloud_upload_event().
+     */
+
+    return cloud_upload_event(1);
+}
+
+
+/* ============================================================
+ * TASK FTP DE TESTE
+ * ============================================================ */
+
+static void cloud_upload_test_task(void *arg)
+{
+    ESP_LOGI(
+        TAG,
+        "Task FTP de teste iniciada"
+    );
+
+
+    bool result =
+        cloud_upload_test();
+
+
+    if (result)
+    {
+        ESP_LOGI(
+            TAG,
+            "Upload FTP realizado com sucesso!"
+        );
+    }
+    else
+    {
+        ESP_LOGE(
+            TAG,
+            "Upload FTP falhou!"
+        );
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Task FTP de teste finalizada"
+    );
 
 
     vTaskDelete(NULL);
