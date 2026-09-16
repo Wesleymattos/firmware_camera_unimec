@@ -9,6 +9,11 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 
+#include "lwip/apps/sntp.h"
+
+#include <time.h>
+#include <stdlib.h>
+
 #include "config.h"
 
 static const char *TAG = "WIFI";
@@ -27,6 +32,116 @@ static int retry_count = 0;
  * Indica se o ESP32 recebeu IP.
  */
 static bool wifi_connected = false;
+
+
+/*
+ * =========================================================
+ * SINCRONIZAÇÃO DE DATA E HORA
+ * =========================================================
+ */
+
+static void wifi_sync_time(void)
+{
+    ESP_LOGI(
+        TAG,
+        "Iniciando sincronizacao de data e hora..."
+    );
+
+    /*
+     * Define o fuso horario de Sao Paulo.
+     */
+    setenv(
+        "TZ",
+        "America/Sao_Paulo",
+        1
+    );
+
+    tzset();
+
+    /*
+     * Configura o servidor NTP.
+     */
+    sntp_setoperatingmode(
+        SNTP_OPMODE_POLL
+    );
+
+    sntp_setservername(
+        0,
+        "pool.ntp.org"
+    );
+
+    /*
+     * Inicia o SNTP.
+     */
+    sntp_init();
+
+    /*
+     * Aguarda ate 10 segundos pela sincronizacao.
+     */
+    time_t now = 0;
+
+    struct tm timeinfo = {0};
+
+    for (int i = 0; i < 100; i++)
+    {
+        time(&now);
+
+        localtime_r(
+            &now,
+            &timeinfo
+        );
+
+        /*
+         * Ano >= 2020 significa que
+         * o relogio ja foi sincronizado.
+         */
+        if (timeinfo.tm_year >= (2020 - 1900))
+        {
+            ESP_LOGI(
+                TAG,
+                "======================================"
+            );
+
+            ESP_LOGI(
+                TAG,
+                "Data e hora sincronizadas!"
+            );
+
+            ESP_LOGI(
+                TAG,
+                "Data: %02d/%02d/%04d",
+                timeinfo.tm_mday,
+                timeinfo.tm_mon + 1,
+                timeinfo.tm_year + 1900
+            );
+
+            ESP_LOGI(
+                TAG,
+                "Hora: %02d:%02d:%02d",
+                timeinfo.tm_hour,
+                timeinfo.tm_min,
+                timeinfo.tm_sec
+            );
+
+            ESP_LOGI(
+                TAG,
+                "======================================"
+            );
+
+            return;
+        }
+
+        vTaskDelay(
+            pdMS_TO_TICKS(100)
+        );
+    }
+
+    ESP_LOGW(
+        TAG,
+        "Nao foi possivel sincronizar a data e hora pelo NTP."
+    );
+}
+
 
 /*
  * Trata os eventos do Wi-Fi e do IP.
@@ -131,6 +246,12 @@ static void wifi_event_handler(
             "======================================"
         );
 
+        /*
+         * Agora que temos rede,
+         * sincroniza data e hora.
+         */
+        wifi_sync_time();
+
         xEventGroupSetBits(
             wifi_event_group,
             WIFI_CONNECTED_BIT
@@ -139,6 +260,7 @@ static void wifi_event_handler(
         return;
     }
 }
+
 
 void wifi_manager_init(void)
 {
@@ -267,6 +389,7 @@ void wifi_manager_init(void)
         esp_wifi_start()
     );
 }
+
 
 bool wifi_manager_is_connected(void)
 {
