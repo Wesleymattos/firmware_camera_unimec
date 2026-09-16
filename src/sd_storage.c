@@ -274,6 +274,10 @@ bool sd_storage_save_photo(
     const unsigned char *data,
     unsigned int size
 )
+
+
+
+
 {
     if (!sd_mounted)
     {
@@ -366,6 +370,102 @@ bool sd_storage_save_photo(
 
     return true;
 }
+
+bool sd_storage_save_metadata(
+    unsigned int event_id,
+    const char *metadata
+)
+{
+    if (!sd_mounted)
+    {
+        ESP_LOGE(
+            TAG,
+            "SD nao esta montado!"
+        );
+
+        return false;
+    }
+
+    if (metadata == NULL)
+    {
+        ESP_LOGE(
+            TAG,
+            "Metadata invalido!"
+        );
+
+        return false;
+    }
+
+    char event_path[64];
+
+    snprintf(
+        event_path,
+        sizeof(event_path),
+        EVENTS_DIR "/event_%06u",
+        event_id
+    );
+
+    char metadata_path[100];
+
+    snprintf(
+        metadata_path,
+        sizeof(metadata_path),
+        "%s/metadata.txt",
+        event_path
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Gravando metadata: %s",
+        metadata_path
+    );
+
+    FILE *file = fopen(
+        metadata_path,
+        "w"
+    );
+
+    if (file == NULL)
+    {
+        ESP_LOGE(
+            TAG,
+            "Falha ao abrir metadata.txt | errno=%d",
+            errno
+        );
+
+        return false;
+    }
+
+    size_t written = fwrite(
+        metadata,
+        1,
+        strlen(metadata),
+        file
+    );
+
+    fclose(file);
+
+    if (written != strlen(metadata))
+    {
+        ESP_LOGE(
+            TAG,
+            "Falha na gravacao do metadata: %u/%u bytes",
+            (unsigned int)written,
+            (unsigned int)strlen(metadata)
+        );
+
+        return false;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Metadata salvo com sucesso!"
+    );
+
+    return true;
+}
+
+
 
 bool sd_storage_has_pending(void)
 {

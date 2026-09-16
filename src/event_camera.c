@@ -10,6 +10,9 @@
 
 #include "sd_storage.h"
 
+#include <time.h>
+#include <stdio.h>
+
 
 static const char *TAG = "EVENT_CAMERA";
 
@@ -152,7 +155,7 @@ static bool event_counter_save(unsigned int event_id)
     {
         ESP_LOGE(
             TAG,
-            "Erro ao salvar contador no NVS: %s",
+            "Erro ao salvar contador do NVS: %s",
             esp_err_to_name(ret)
         );
 
@@ -196,6 +199,112 @@ static bool event_counter_save(unsigned int event_id)
 }
 
 
+/*
+ * Cria o metadata do evento.
+ *
+ * O timestamp recebido representa
+ * o momento em que a pessoa foi detectada.
+ */
+static bool event_metadata_save(
+    unsigned int event_id,
+    time_t event_timestamp
+)
+{
+    struct tm timeinfo;
+
+    localtime_r(
+        &event_timestamp,
+        &timeinfo
+    );
+
+
+    char metadata[256];
+
+
+    int length = snprintf(
+        metadata,
+        sizeof(metadata),
+
+        "event_id=%06u\n"
+        "timestamp=%lld\n"
+        "date=%02d/%02d/%04d\n"
+        "time=%02d:%02d:%02d\n",
+
+        event_id,
+
+        (long long)event_timestamp,
+
+        timeinfo.tm_mday,
+        timeinfo.tm_mon + 1,
+        timeinfo.tm_year + 1900,
+
+        timeinfo.tm_hour,
+        timeinfo.tm_min,
+        timeinfo.tm_sec
+    );
+
+
+    if (
+        length < 0 ||
+        length >= sizeof(metadata)
+    )
+    {
+        ESP_LOGE(
+            TAG,
+            "Falha ao montar metadata do evento %06u",
+            event_id
+        );
+
+        return false;
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Data do evento: %02d/%02d/%04d",
+        timeinfo.tm_mday,
+        timeinfo.tm_mon + 1,
+        timeinfo.tm_year + 1900
+    );
+
+
+    ESP_LOGI(
+        TAG,
+        "Hora do evento: %02d:%02d:%02d",
+        timeinfo.tm_hour,
+        timeinfo.tm_min,
+        timeinfo.tm_sec
+    );
+
+
+    if (
+        !sd_storage_save_metadata(
+            event_id,
+            metadata
+        )
+    )
+    {
+        ESP_LOGE(
+            TAG,
+            "Falha ao salvar metadata do evento %06u",
+            event_id
+        );
+
+        return false;
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Metadata do evento %06u salvo com sucesso!",
+        event_id
+    );
+
+
+    return true;
+}
+
+
 void event_camera_init(void)
 {
     ESP_LOGI(
@@ -230,7 +339,10 @@ void event_camera_init(void)
 }
 
 
-bool event_camera_capture_event(unsigned int *event_id)
+bool event_camera_capture_event(
+    unsigned int *event_id,
+    time_t event_timestamp
+)
 {
     /*
      * Verifica se o ponteiro recebido e valido.
@@ -395,6 +507,30 @@ bool event_camera_capture_event(unsigned int *event_id)
     /*
      * Todas as 10 fotos foram salvas.
      *
+     * Agora grava a data/hora do evento.
+     */
+    if (
+        !event_metadata_save(
+            current_event_id,
+            event_timestamp
+        )
+    )
+    {
+        ESP_LOGE(
+            TAG,
+            "ATENCAO: evento %06u foi salvo, "
+            "mas o metadata nao foi salvo!",
+            current_event_id
+        );
+
+        return false;
+    }
+
+
+    /*
+     * Todas as informações do evento
+     * foram salvas.
+     *
      * Agora podemos persistir o ID no NVS.
      */
     if (!event_counter_save(current_event_id))
@@ -435,6 +571,11 @@ bool event_camera_capture_event(unsigned int *event_id)
     ESP_LOGI(
         TAG,
         "10 fotos salvas no cartao SD"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Metadata salvo no cartao SD"
     );
 
     ESP_LOGI(

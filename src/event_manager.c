@@ -8,6 +8,7 @@
 #include "event_camera.h"
 #include "mqtt_manager.h"
 #include "cloud_upload.h"
+#include <time.h>
 
 
 static const char *TAG = "EVENT";
@@ -65,6 +66,8 @@ void event_manager_acionar(void)
 
     alarme_ativo = true;
 
+    
+
     relay_on();
 }
 
@@ -105,6 +108,10 @@ void event_manager_pessoa_detectada(void)
     alarme_ativo = true;
 
 
+
+    time_t event_timestamp;
+
+time(&event_timestamp);
     /* --------------------------------------------------------
      * Liga rele
      * -------------------------------------------------------- */
@@ -140,9 +147,10 @@ void event_manager_pessoa_detectada(void)
 
 
     bool captura_ok =
-        event_camera_capture_event(
-            &event_id
-        );
+    event_camera_capture_event(
+        &event_id,
+        event_timestamp
+    );
 
 
     if (!captura_ok)
