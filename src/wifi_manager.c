@@ -13,6 +13,8 @@
 
 #include <time.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <sys/time.h>
 
 #include "config.h"
 
@@ -24,6 +26,13 @@ static const char *TAG = "WIFI";
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+/*
+ * NVS utilizado para guardar a última
+ * referência válida de data/hora.
+ */
+#define TIME_NVS_NAMESPACE "system_time"
+#define TIME_NVS_KEY       "last_timestamp"
+
 static EventGroupHandle_t wifi_event_group = NULL;
 
 static int retry_count = 0;
@@ -32,6 +41,245 @@ static int retry_count = 0;
  * Indica se o ESP32 recebeu IP.
  */
 static bool wifi_connected = false;
+
+
+/*
+ * =========================================================
+ * RECUPERA ÚLTIMA DATA/HORA DO NVS
+ * =========================================================
+ */
+
+static bool wifi_load_saved_time(void)
+{
+    nvs_handle_t handle;
+
+    esp_err_t ret =
+        nvs_open(
+            TIME_NVS_NAMESPACE,
+            NVS_READONLY,
+            &handle
+        );
+
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(
+            TAG,
+            "Nao foi possivel abrir NVS para recuperar hora: %s",
+            esp_err_to_name(ret)
+        );
+
+        return false;
+    }
+
+    int64_t saved_timestamp = 0;
+
+    ret =
+        nvs_get_i64(
+            handle,
+            TIME_NVS_KEY,
+            &saved_timestamp
+        );
+
+    nvs_close(handle);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND)
+    {
+        ESP_LOGI(
+            TAG,
+            "Nenhuma referencia de data/hora salva no NVS."
+        );
+
+        return false;
+    }
+
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(
+            TAG,
+            "Erro ao ler data/hora do NVS: %s",
+            esp_err_to_name(ret)
+        );
+
+        return false;
+    }
+
+    /*
+     * Verifica se o timestamp parece válido.
+     */
+    if (saved_timestamp < 1577836800)
+    {
+        ESP_LOGW(
+            TAG,
+            "Timestamp salvo no NVS parece invalido."
+        );
+
+        return false;
+    }
+
+    /*
+     * Restaura o relógio do sistema.
+     */
+    struct timeval tv;
+
+    tv.tv_sec = (time_t)saved_timestamp;
+    tv.tv_usec = 0;
+
+    settimeofday(
+        &tv,
+        NULL
+    );
+
+    /*
+     * Define o fuso horário.
+     */
+    setenv(
+        "TZ",
+        "America/Sao_Paulo",
+        1
+    );
+
+    tzset();
+
+    /*
+     * Mostra a data/hora recuperada.
+     */
+    time_t now = 0;
+
+    struct tm timeinfo = {0};
+
+    time(&now);
+
+    localtime_r(
+        &now,
+        &timeinfo
+    );
+
+    ESP_LOGI(
+        TAG,
+        "======================================"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Data/hora recuperada do NVS!"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Data: %02d/%02d/%04d",
+        timeinfo.tm_mday,
+        timeinfo.tm_mon + 1,
+        timeinfo.tm_year + 1900
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Hora: %02d:%02d:%02d",
+        timeinfo.tm_hour,
+        timeinfo.tm_min,
+        timeinfo.tm_sec
+    );
+
+    ESP_LOGI(
+        TAG,
+        "======================================"
+    );
+
+    return true;
+}
+
+
+/*
+ * =========================================================
+ * SALVA DATA/HORA ATUAL NO NVS
+ * =========================================================
+ */
+
+static bool wifi_save_current_time(void)
+{
+    time_t now = 0;
+
+    time(&now);
+
+    /*
+     * Verifica se o relógio possui uma data válida.
+     */
+    if (now < 1577836800)
+    {
+        ESP_LOGW(
+            TAG,
+            "Relogio invalido. Data/hora nao sera salva."
+        );
+
+        return false;
+    }
+
+    nvs_handle_t handle;
+
+    esp_err_t ret =
+        nvs_open(
+            TIME_NVS_NAMESPACE,
+            NVS_READWRITE,
+            &handle
+        );
+
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(
+            TAG,
+            "Nao foi possivel abrir NVS para salvar hora: %s",
+            esp_err_to_name(ret)
+        );
+
+        return false;
+    }
+
+    ret =
+        nvs_set_i64(
+            handle,
+            TIME_NVS_KEY,
+            (int64_t)now
+        );
+
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(
+            TAG,
+            "Erro ao salvar timestamp no NVS: %s",
+            esp_err_to_name(ret)
+        );
+
+        nvs_close(handle);
+
+        return false;
+    }
+
+    ret =
+        nvs_commit(handle);
+
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(
+            TAG,
+            "Erro ao confirmar timestamp no NVS: %s",
+            esp_err_to_name(ret)
+        );
+
+        nvs_close(handle);
+
+        return false;
+    }
+
+    nvs_close(handle);
+
+    ESP_LOGI(
+        TAG,
+        "Data/hora atual salva no NVS. Timestamp: %lld",
+        (long long)now
+    );
+
+    return true;
+}
 
 
 /*
@@ -128,6 +376,24 @@ static void wifi_sync_time(void)
                 "======================================"
             );
 
+            /*
+             * Salva a referência sincronizada.
+             */
+            if (wifi_save_current_time())
+            {
+                ESP_LOGI(
+                    TAG,
+                    "Referencia de data/hora persistida com sucesso!"
+                );
+            }
+            else
+            {
+                ESP_LOGE(
+                    TAG,
+                    "FALHA ao persistir data/hora no NVS!"
+                );
+            }
+
             return;
         }
 
@@ -144,8 +410,11 @@ static void wifi_sync_time(void)
 
 
 /*
- * Trata os eventos do Wi-Fi e do IP.
+ * =========================================================
+ * EVENTOS DO WIFI
+ * =========================================================
  */
+
 static void wifi_event_handler(
     void *arg,
     esp_event_base_t event_base,
@@ -262,6 +531,12 @@ static void wifi_event_handler(
 }
 
 
+/*
+ * =========================================================
+ * INICIALIZAÇÃO DO WIFI
+ * =========================================================
+ */
+
 void wifi_manager_init(void)
 {
     ESP_LOGI(
@@ -272,7 +547,8 @@ void wifi_manager_init(void)
     /*
      * Inicializa NVS.
      */
-    esp_err_t ret = nvs_flash_init();
+    esp_err_t ret =
+        nvs_flash_init();
 
     if (
         ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -283,10 +559,17 @@ void wifi_manager_init(void)
             nvs_flash_erase()
         );
 
-        ret = nvs_flash_init();
+        ret =
+            nvs_flash_init();
     }
 
     ESP_ERROR_CHECK(ret);
+
+    /*
+     * Recupera a última referência
+     * de data/hora salva.
+     */
+    wifi_load_saved_time();
 
     /*
      * Cria grupo de eventos.
@@ -390,6 +673,12 @@ void wifi_manager_init(void)
     );
 }
 
+
+/*
+ * =========================================================
+ * STATUS DO WIFI
+ * =========================================================
+ */
 
 bool wifi_manager_is_connected(void)
 {
