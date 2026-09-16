@@ -486,7 +486,111 @@ bool cloud_upload_event(unsigned int event_id)
 
 
     /* --------------------------------------------------------
-     * 9. Final
+     * 9. Envia metadata
+     * -------------------------------------------------------- */
+
+    snprintf(
+        local_file,
+        sizeof(local_file),
+        "/sdcard/events/%s/metadata.txt",
+        event_folder
+    );
+
+
+    snprintf(
+        remote_file,
+        sizeof(remote_file),
+        "metadata.txt"
+    );
+
+
+    ESP_LOGI(
+        TAG,
+        "--------------------------------------"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Enviando metadata do evento"
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Local : %s",
+        local_file
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Remoto: %s",
+        remote_file
+    );
+
+
+    /* --------------------------------------------------------
+     * Verifica metadata
+     * -------------------------------------------------------- */
+
+    FILE *metadata_file = fopen(
+        local_file,
+        "rb"
+    );
+
+
+    if (metadata_file == NULL)
+    {
+        ESP_LOGE(
+            TAG,
+            "Metadata nao encontrado: %s",
+            local_file
+        );
+
+        ftp->ftpClientQuit(ftp_netbuf);
+
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+
+
+    fclose(metadata_file);
+
+
+    /* --------------------------------------------------------
+     * Upload metadata
+     * -------------------------------------------------------- */
+
+    result = ftp->ftpClientPut(
+        local_file,
+        remote_file,
+        FTP_CLIENT_ASCII,
+        ftp_netbuf
+    );
+
+
+    if (result <= 0)
+    {
+        ESP_LOGE(
+            TAG,
+            "Falha ao enviar metadata!"
+        );
+
+        ftp->ftpClientQuit(ftp_netbuf);
+
+        ftp_netbuf = NULL;
+
+        return false;
+    }
+
+
+    ESP_LOGI(
+        TAG,
+        "Metadata enviada com sucesso!"
+    );
+
+
+    /* --------------------------------------------------------
+     * 10. Final
      * -------------------------------------------------------- */
 
     ESP_LOGI(
@@ -519,12 +623,17 @@ bool cloud_upload_event(unsigned int event_id)
 
     ESP_LOGI(
         TAG,
+        "Metadata enviada: SIM"
+    );
+
+    ESP_LOGI(
+        TAG,
         "======================================"
     );
 
 
     /* --------------------------------------------------------
-     * 10. Fecha FTP
+     * 11. Fecha FTP
      * -------------------------------------------------------- */
 
     ftp->ftpClientQuit(
@@ -546,7 +655,7 @@ static void cloud_upload_event_task(void *arg)
 {
     /*
      * O event_id foi alocado dinamicamente
-     * antes da criação desta task.
+     * antes da criacao desta task.
      */
     unsigned int event_id =
         *((unsigned int *)arg);
@@ -554,7 +663,7 @@ static void cloud_upload_event_task(void *arg)
 
     /*
      * Agora que copiamos o valor para uma
-     * variável local, podemos liberar a memória.
+     * variavel local, podemos liberar a memoria.
      */
     free(arg);
 
