@@ -19,6 +19,8 @@
 #include "mqtt_manager.h"
 #include "cloud_upload.h"
 
+#include "vl53l0x.h"
+
 void app_main(void)
 {
     system_info_init();
@@ -46,6 +48,27 @@ void app_main(void)
      * Vermelho = relé desligado
      * Azul     = relé ligado
      */
+
+
+
+     /* ========================================================
+ * VL53L0X
+ * ======================================================== */
+
+if (vl53l0x_init())
+{
+    ESP_LOGI(
+        "MAIN",
+        "VL53L0X inicializado com sucesso!"
+    );
+}
+else
+{
+    ESP_LOGE(
+        "MAIN",
+        "Falha ao inicializar VL53L0X!"
+    );
+}
     led_status_init();
 
     /*
@@ -112,42 +135,34 @@ cloud_upload_init();
      * Loop principal.
      */
     while (1)
+{
+    uint16_t distancia_mm;
+
+    if (vl53l0x_read_distance(&distancia_mm))
     {
-        /*
-         * Verifica se houve detecção.
-         *
-         * Por enquanto o detector
-         * é FICTÍCIO.
-         */
-        if (detector_pessoa_detectada())
-        {
-            event_manager_pessoa_detectada();
-        }
-
-        /*
-         * Processa eventos pendentes.
-         *
-         * Futuramente:
-         *
-         * - fotos a cada 5 segundos
-         * - fila de eventos
-         * - upload FTP
-         * - reenvio de arquivos
-         * - comunicação com servidor
-         */
-        event_manager_process();
-
-        /*
-         * Informações periódicas
-         * do sistema.
-         */
-        system_info_log();
-
-        /*
-         * Aguarda 1 segundo.
-         */
-        vTaskDelay(
-            pdMS_TO_TICKS(1000)
+        ESP_LOGI(
+    "MAIN",
+    "Distancia VL53L0X: %.2f m",
+    distancia_mm / 1000.0f
+);
+    }
+    else
+    {
+        ESP_LOGE(
+            "MAIN",
+            "Falha na leitura do VL53L0X"
         );
     }
+
+    if (detector_pessoa_detectada())
+    {
+        event_manager_pessoa_detectada();
+    }
+
+    event_manager_process();
+
+    system_info_log();
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}
 }
