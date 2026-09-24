@@ -163,6 +163,6 @@ cloud_upload_init();
 
     system_info_log();
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(300));
 }
 }

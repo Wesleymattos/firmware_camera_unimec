@@ -6,7 +6,7 @@
 #include "mqtt_client.h"
 
 #include "event_manager.h"
-
+#include "detector.h"
 
 static const char *TAG = "MQTT";
 
@@ -234,10 +234,16 @@ static void mqtt_event_handler(
                     );
 
                     /*
-                     * Usa o Event Manager para
-                     * desarmar o sistema.
+                     * Desarma o sistema.
                      */
                     event_manager_desarmar();
+
+                    /*
+                     * Reseta o detector para que
+                     * fique novamente preparado
+                     * para uma nova deteccao.
+                     */
+                    detector_reset();
                 }
 
 
