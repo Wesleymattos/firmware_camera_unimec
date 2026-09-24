@@ -1163,11 +1163,21 @@ bool vl53l0x_read_distance(uint16_t *distance_mm)
     *distance_mm = distance;
 
 
+    if (distance > 2000)
+{
     ESP_LOGI(
-    TAG,
-    "Distancia: %.2f m",
-    distance / 1000.0f
-);
+        TAG,
+        "Distancia: FORA DO ALCANCE (> 2.00 m)"
+    );
+}
+else
+{
+    ESP_LOGI(
+        TAG,
+        "Distancia: %.2f m",
+        distance / 1000.0f
+    );
+}
 
 
     return true;
