@@ -212,10 +212,18 @@ static bool event_metadata_save(
 {
     struct tm timeinfo;
 
-    localtime_r(
-        &event_timestamp,
-        &timeinfo
-    );
+setenv(
+    "TZ",
+    "BRT3",
+    1
+);
+
+tzset();
+
+localtime_r(
+    &event_timestamp,
+    &timeinfo
+);
 
 
     char metadata[256];

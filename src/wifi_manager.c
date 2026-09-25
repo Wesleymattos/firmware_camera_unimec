@@ -9,7 +9,7 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 
-#include "lwip/apps/sntp.h"
+#include "esp_sntp.h"
 
 #include <time.h>
 #include <stdlib.h>
@@ -133,11 +133,10 @@ static bool wifi_load_saved_time(void)
      * Define o fuso horário.
      */
     setenv(
-        "TZ",
-        "America/Sao_Paulo",
-        1
-    );
-
+    "TZ",
+    "BRT3",
+    1
+);
     tzset();
 
     /*
@@ -299,10 +298,10 @@ static void wifi_sync_time(void)
      * Define o fuso horario de Sao Paulo.
      */
     setenv(
-        "TZ",
-        "America/Sao_Paulo",
-        1
-    );
+    "TZ",
+    "BRT3",
+    1
+);
 
     tzset();
 
@@ -343,7 +342,7 @@ static void wifi_sync_time(void)
          * Ano >= 2020 significa que
          * o relogio ja foi sincronizado.
          */
-        if (timeinfo.tm_year >= (2020 - 1900))
+        if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED)
         {
             ESP_LOGI(
                 TAG,
