@@ -6,7 +6,7 @@
 static const char *TAG = "DETECTOR";
 
 #define MOVIMENTO_MINIMO_MM           150
-#define LEITURAS_MOVIMENTO_CONFIRMAR  3
+#define LEITURAS_MOVIMENTO_CONFIRMAR  1
 
 // VL53L0X usa valores próximos de 8191 mm para indicar
 // que a distância está fora do alcance.
