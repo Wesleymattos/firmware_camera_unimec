@@ -7,7 +7,7 @@
 
 static const char *TAG = "RELAY";
 
-#define RELAY_GPIO GPIO_NUM_1
+#define RELAY_GPIO GPIO_NUM_21
 #define RELAY_ACTIVE_LEVEL 1
 
 static bool relay_state = false;
