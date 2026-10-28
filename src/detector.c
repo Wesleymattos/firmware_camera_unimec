@@ -68,14 +68,17 @@ bool detector_pessoa_detectada(void)
     uint16_t distancia_atual_mm = 0;
 
     if (!vl53l0x_read_distance(&distancia_atual_mm))
-    {
-        ESP_LOGW(
-            TAG,
-            "Falha na leitura do VL53L0X"
-        );
+{
+    ESP_LOGW(
+        TAG,
+        "Falha na leitura do VL53L0X - reiniciando confirmacao"
+    );
 
-        return false;
-    }
+    leituras_movimento = 0;
+    distancia_anterior_mm = 0;
+
+    return false;
+}
 
     /*
      * Ignora leituras fora do alcance.
@@ -87,15 +90,18 @@ bool detector_pessoa_detectada(void)
      * - interferir na comparacao seguinte.
      */
     if (distancia_atual_mm >= DISTANCIA_FORA_DO_ALCANCE_MM)
-    {
-        ESP_LOGW(
-            TAG,
-            "Distancia fora do alcance: %u mm - ignorando",
-            distancia_atual_mm
-        );
+{
+    ESP_LOGW(
+        TAG,
+        "Distancia fora do alcance: %u mm - reiniciando confirmacao",
+        distancia_atual_mm
+    );
 
-        return false;
-    }
+    leituras_movimento = 0;
+    distancia_anterior_mm = 0;
+
+    return false;
+}
 
     /*
      * Primeira leitura valida:

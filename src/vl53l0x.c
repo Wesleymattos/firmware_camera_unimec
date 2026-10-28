@@ -2655,13 +2655,14 @@ bool vl53l0x_read_distance(
      * CLEAR INTERRUPT
      * -------------------------------------------------------- */
 
-    if (!vl53_write_reg8(
+       if (!vl53_write_reg8(
             SYSTEM_INTERRUPT_CLEAR,
             0x01))
     {
         return false;
     }
 
+   
 
     *distance_mm = distance;
 
