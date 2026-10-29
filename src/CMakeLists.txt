@@ -11,4 +11,5 @@ idf_component_register(
         mqtt
         led_strip
         ftpClient
+        esp_modem
 )

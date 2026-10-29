@@ -20,6 +20,7 @@
 #include "cloud_upload.h"
 
 #include "vl53l0x.h"
+#include "modem.h"
 
 void app_main(void)
 {
@@ -48,6 +49,9 @@ void app_main(void)
      * Vermelho = relé desligado
      * Azul     = relé ligado
      */
+
+  /*inicializando modem*/
+     modem_init();
 
 
 
