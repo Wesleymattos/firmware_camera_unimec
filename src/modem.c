@@ -17,7 +17,7 @@ static const char *TAG = "MODEM";
 /* UART escolhida para o SIM7080G */
 #define MODEM_UART_PORT UART_NUM_1
 #define MODEM_TX_GPIO   1
-#define MODEM_RX_GPIO   2
+#define MODEM_RX_GPIO   41
 #define MODEM_BAUD_RATE 115200
 
 /*

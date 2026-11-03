@@ -1,0 +1,63 @@
+
+#include "driver/uart.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <string.h>
+#include "driver/gpio.h"
+
+#define MODEM_UART UART_NUM_1
+#define MODEM_TX   GPIO_NUM_1
+#define MODEM_RX   GPIO_NUM_41
+
+static const char *TAG = "UART_TEST";
+
+void app_main(void)
+{
+    uart_config_t config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT
+    };
+
+    ESP_ERROR_CHECK(uart_driver_install(
+        MODEM_UART, 2048, 0, 0, NULL, 0
+    ));
+
+    ESP_ERROR_CHECK(uart_param_config(MODEM_UART, &config));
+
+    ESP_ERROR_CHECK(uart_set_pin(
+        MODEM_UART, MODEM_TX, MODEM_RX,
+        UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE
+    ));
+
+    ESP_LOGI(TAG, "UART2 iniciada: TX GPIO17, RX GPIO18, 115200");
+
+    while (1) {
+        char response[256] = {0};
+
+        uart_flush_input(MODEM_UART);
+
+        uart_write_bytes(MODEM_UART, "AT\r\n", 4);
+        uart_wait_tx_done(MODEM_UART, pdMS_TO_TICKS(1000));
+
+        int len = uart_read_bytes(
+            MODEM_UART,
+            (uint8_t *)response,
+            sizeof(response) - 1,
+            pdMS_TO_TICKS(1500)
+        );
+
+        if (len > 0) {
+            response[len] = '\0';
+            ESP_LOGI(TAG, "Resposta do modem:\n%s", response);
+        } else {
+            ESP_LOGE(TAG, "Nenhuma resposta do modem!");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
