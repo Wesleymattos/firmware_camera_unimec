@@ -1992,7 +1992,7 @@ bool vl53l0x_init(void)
     i2c_device_config_t device_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = VL53L0X_I2C_ADDRESS,
-        .scl_speed_hz = 400000
+        .scl_speed_hz = 100000
     };
 
 
