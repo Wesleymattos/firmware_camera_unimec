@@ -579,16 +579,22 @@ void wifi_manager_init(void)
     /*
      * Inicializa TCP/IP.
      */
-    ESP_ERROR_CHECK(
-        esp_netif_init()
-    );
+
+      esp_err_t err = esp_event_loop_create_default();
+   err = esp_netif_init();
+
+if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    ESP_ERROR_CHECK(err);
+}
 
     /*
      * Cria o event loop padrão.
      */
-    ESP_ERROR_CHECK(
-        esp_event_loop_create_default()
-    );
+ 
+
+if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    ESP_ERROR_CHECK(err);
+}
 
     /*
      * Cria interface Wi-Fi STA.

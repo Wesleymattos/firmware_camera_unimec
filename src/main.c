@@ -7,7 +7,7 @@
 #include "esp_log.h"
 
 #include "system_info.h"
-// #include "wifi_manager.h"
+#include "wifi_manager.h"
 
 #include "camera.h"
 #include "web_server.h"
@@ -77,9 +77,9 @@ void app_main(void)
      * A conexão de dados será feita pelo modem.
      */
 
-    /*
-     * wifi_manager_init();
-     */
+    
+     wifi_manager_init();
+     
 
     /*
      * Inicializa câmera.
@@ -187,21 +187,26 @@ else
             );
         }
 
-      /*
- * Leitura do VL53L0X e detector de pessoa.
- * Só executa se o sensor inicializou corretamente.
- */
-if (vl53l0x_ok)
-{
-    uint16_t distancia_mm;
+        /*
+         * Leitura do VL53L0X.
+         */
+        uint16_t distancia_mm;
 
-    if (vl53l0x_read_distance(&distancia_mm))
-    {
-        ESP_LOGI(
-            TAG,
-            "Distancia VL53L0X: %.2f m",
-            distancia_mm / 1000.0f
-        );
+        if (vl53l0x_read_distance(&distancia_mm))
+        {
+            ESP_LOGI(
+                TAG,
+                "Distancia VL53L0X: %.2f m",
+                distancia_mm / 1000.0f
+            );
+        }
+        else
+        {
+            ESP_LOGE(
+                TAG,
+                "Falha na leitura do VL53L0X"
+            );
+        }
 
         /*
          * Detector de pessoa.
@@ -210,15 +215,10 @@ if (vl53l0x_ok)
         {
             event_manager_pessoa_detectada();
         }
-    }
-    else
-    {
-        ESP_LOGE(
-            TAG,
-            "Falha na leitura do VL53L0X"
-        );
-    }
-}
+
+
+
+        
         /*
          * Processamento dos eventos.
          */
