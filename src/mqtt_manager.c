@@ -28,6 +28,13 @@ static const char *TAG = "MQTT";
  */
 #define MQTT_TOPIC_COMMAND "unimec/camera-01/command"
 
+
+#define MQTT_TOPIC_VL53L0X_STATUS "unimec/camera-01/sensor/vl53l0x/status"
+
+static bool vl53l0x_status_known = false;
+static bool vl53l0x_status_online = false;
+
+
 /*
  * Comandos aceitos.
  */
@@ -37,6 +44,45 @@ static const char *TAG = "MQTT";
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 
 static bool mqtt_connected = false;
+
+
+bool mqtt_manager_publish_vl53l0x_status(bool online)
+{
+    if (!mqtt_connected || mqtt_client == NULL) {
+        ESP_LOGW(TAG, "MQTT desconectado. Status do VL53L0X nao enviado.");
+        return false;
+    }
+
+    const char *message = online ? "online" : "offline";
+
+    int msg_id = esp_mqtt_client_publish(
+        mqtt_client,
+        MQTT_TOPIC_VL53L0X_STATUS,
+        message,
+        0,
+        1,  // QoS 1
+        1   // Retain
+    );
+
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Falha ao publicar status do VL53L0X");
+        return false;
+    }
+
+    vl53l0x_status_known = true;
+    vl53l0x_status_online = online;
+
+    ESP_LOGI(
+        TAG,
+        "VL53L0X: %s | topic: %s",
+        message,
+        MQTT_TOPIC_VL53L0X_STATUS
+    );
+
+    return true;
+}
+
+
 
 
 /*

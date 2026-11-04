@@ -78,7 +78,7 @@ void app_main(void)
      */
 
     
-     wifi_manager_init();
+     //wifi_manager_init();
      
 
     /*
@@ -177,7 +177,7 @@ else
             /*
              * Inicializa servidor HTTP da câmera.
              */
-            web_server_init();
+            //web_server_init();
 
             servicos_inicializados = true;
 
