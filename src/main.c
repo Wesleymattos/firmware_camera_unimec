@@ -32,6 +32,8 @@
 
 #include "teste_modem.h"
 
+#include "ota_manager.h"
+
 
 static const char *TAG = "MAIN";
 
@@ -90,6 +92,11 @@ void app_main(void)
      * Inicializa cartão SD.
      */
     sd_storage_init();
+
+    /*
+     * Inicializa módulo OTA.
+     */
+    ESP_ERROR_CHECK(ota_manager_init());
 
     /*
      * Inicializa modem celular.

@@ -8,6 +8,8 @@
 #include "event_manager.h"
 #include "detector.h"
 
+#include "ota_manager.h"
+
 static const char *TAG = "MQTT";
 
 /*
@@ -31,6 +33,8 @@ static const char *TAG = "MQTT";
 
 #define MQTT_TOPIC_VL53L0X_STATUS "unimec/camera-01/sensor/vl53l0x/status"
 
+
+
 static bool vl53l0x_status_known = false;
 static bool vl53l0x_status_online = false;
 
@@ -40,6 +44,7 @@ static bool vl53l0x_status_online = false;
  */
 #define MQTT_COMMAND_ON    "ON"
 #define MQTT_COMMAND_OFF   "OFF"
+#define MQTT_COMMAND_OTA   "OTA:"
 
 static esp_mqtt_client_handle_t mqtt_client = NULL;
 
@@ -293,6 +298,58 @@ static void mqtt_event_handler(
                 }
 
 
+
+                /*
+                 * ==============================
+                 * COMANDO OTA
+                 * Formato: OTA:https://.../firmware.bin
+                 * ==============================
+                 */
+                else if (
+                    event->data_len > strlen(MQTT_COMMAND_OTA)
+                    &&
+                    strncmp(
+                        event->data,
+                        MQTT_COMMAND_OTA,
+                        strlen(MQTT_COMMAND_OTA)
+                    ) == 0
+                )
+                {
+                    size_t url_len =
+                        event->data_len - strlen(MQTT_COMMAND_OTA);
+
+                    char firmware_url[512];
+
+                    if (url_len >= sizeof(firmware_url))
+                    {
+                        ESP_LOGE(TAG, "URL OTA muito longa");
+                    }
+                    else
+                    {
+                        memcpy(
+                            firmware_url,
+                            event->data + strlen(MQTT_COMMAND_OTA),
+                            url_len
+                        );
+
+                        firmware_url[url_len] = '\0';
+
+                        ESP_LOGI(TAG, "Solicitando atualizacao OTA");
+
+                        esp_err_t ota_err =
+                            ota_manager_start(firmware_url);
+
+                        if (ota_err != ESP_OK)
+                        {
+                            ESP_LOGE(
+                                TAG,
+                                "Falha ao solicitar OTA: %s",
+                                esp_err_to_name(ota_err)
+                            );
+                        }
+                    }
+                }
+
                 /*
                  * ==============================
                  * COMANDO DESCONHECIDO
@@ -305,6 +362,7 @@ static void mqtt_event_handler(
                         "Comando desconhecido recebido!"
                     );
                 }
+
             }
 
             break;

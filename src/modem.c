@@ -54,6 +54,9 @@ static void modem_ip_event_handler(
 {
     (void)arg;
 
+    ESP_LOGI(TAG, "Evento IP recebido: base=%s, id=%ld",
+         event_base, (long)event_id);
+
     if (event_base != IP_EVENT) {
         return;
     }
@@ -235,6 +238,7 @@ static void modem_task(void *arg)
             ESP_LOGI(TAG, "Aguardando modem estabilizar...");
 
             vTaskDelay(pdMS_TO_TICKS(MODEM_BOOT_DELAY_MS));
+            ESP_LOGI(TAG, "Estabilizacao concluida. Iniciando PPP...");
         }
 
         /*
@@ -283,10 +287,15 @@ static void modem_task(void *arg)
         /*
          * Inicia o modo de dados PPP.
          */
-        esp_err_t err = esp_modem_set_mode(
-            modem_dce,
-            ESP_MODEM_MODE_DATA
-        );
+ESP_LOGI(TAG, "Chamando esp_modem_set_mode(DATA)...");
+
+esp_err_t err = esp_modem_set_mode(
+    modem_dce,
+    ESP_MODEM_MODE_DATA
+);
+
+ESP_LOGI(TAG, "Resultado esp_modem_set_mode(DATA): %s",
+         esp_err_to_name(err));
 
         if (err != ESP_OK) {
 
@@ -309,13 +318,18 @@ static void modem_task(void *arg)
              */
             uint32_t elapsed_ms = 0;
 
-            while (!modem_connected &&
-                   elapsed_ms < MODEM_PPP_TIMEOUT_MS) {
+while (!modem_connected &&
+       elapsed_ms < MODEM_PPP_TIMEOUT_MS) {
 
-                vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-                elapsed_ms += 1000;
-            }
+    elapsed_ms += 1000;
+
+    if ((elapsed_ms % 5000) == 0) {
+        ESP_LOGI(TAG, "Aguardando IP PPP... %lu ms",
+                 (unsigned long)elapsed_ms);
+    }
+}
 
             if (modem_connected) {
 

@@ -12,4 +12,7 @@ idf_component_register(
         led_strip
         ftpClient
         esp_modem
+        esp_https_ota
+        esp_http_client
+        mbedtls
 )
