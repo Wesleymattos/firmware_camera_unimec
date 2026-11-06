@@ -15,6 +15,8 @@
 
 #include "modem.h"
 
+#include "led_status.h"
+
 static const char *TAG = "OTA";
 
 #define OTA_TASK_STACK_SIZE 8192
@@ -33,6 +35,7 @@ static void ota_task(void *arg)
     (void)arg;
 
     ESP_LOGI(TAG, "Tarefa OTA iniciada");
+    led_status_ota_start();
 
     /*
      * Aguarda a conexão PPP.
@@ -76,10 +79,13 @@ static void ota_task(void *arg)
         esp_err_to_name(err)
     );
 
-    ota_running = false;
-    ota_task_handle = NULL;
+ota_running = false;
+ota_task_handle = NULL;
 
-    vTaskDelete(NULL);
+/* Retorna o LED ao estado de relé desligado */
+led_status_relay_off();
+
+vTaskDelete(NULL);
 }
 
 /*

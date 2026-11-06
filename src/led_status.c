@@ -142,3 +142,20 @@ void led_status_relay_off(void)
         "LED VERMELHO - RELE DESLIGADO"
     );
 }
+
+/*
+ * OTA em andamento = LED amarelo.
+ */
+void led_status_ota_start(void)
+{
+    led_status_set_color(
+        80,
+        50,
+        0
+    );
+
+    ESP_LOGW(
+        TAG,
+        "LED AMARELO - ATUALIZACAO OTA EM ANDAMENTO"
+    );
+}

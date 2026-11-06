@@ -4,7 +4,9 @@
 void led_status_init(void);
 
 void led_status_relay_on(void);
-
 void led_status_relay_off(void);
+
+/* Estado visual durante atualizacao OTA */
+void led_status_ota_start(void);
 
 #endif
