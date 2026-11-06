@@ -11,6 +11,8 @@
 
 #include "FtpClient.h"
 
+#include <sys/stat.h>
+#include "esp_timer.h"
 
 static const char *TAG = "CLOUD_UPLOAD";
 
@@ -165,6 +167,36 @@ static bool ftp_entrar_ou_criar_pasta(
 
     return true;
 }
+
+
+
+static void ftp_log_file_info(const char *path)
+{
+    struct stat st;
+
+    if (stat(path, &st) == 0)
+    {
+        ESP_LOGI(TAG,
+                 "Arquivo: %s | Tamanho: %ld bytes",
+                 path,
+                 (long)st.st_size);
+    }
+    else
+    {
+        ESP_LOGE(TAG,
+                 "Nao foi possivel obter tamanho: %s",
+                 path);
+    }
+}
+
+
+
+
+
+
+
+
+
 
 
 /* ============================================================
@@ -451,12 +483,26 @@ bool cloud_upload_event(unsigned int event_id)
          * Upload
          * ---------------------------------------------------- */
 
-        result = ftp->ftpClientPut(
-            local_file,
-            remote_file,
-            FTP_CLIENT_BINARY,
-            ftp_netbuf
-        );
+ftp_log_file_info(local_file);
+
+int64_t upload_start = esp_timer_get_time();
+
+ESP_LOGI(TAG, "FTP PUT iniciado: %s", remote_file);
+
+result = ftp->ftpClientPut(
+    local_file,
+    remote_file,
+    FTP_CLIENT_BINARY,
+    ftp_netbuf
+);
+
+int64_t upload_end = esp_timer_get_time();
+
+ESP_LOGI(TAG,
+         "FTP PUT finalizado: %s | retorno=%d | tempo=%lld ms",
+         remote_file,
+         result,
+         (long long)((upload_end - upload_start) / 1000));
 
 
         if (result <= 0)
@@ -560,12 +606,26 @@ bool cloud_upload_event(unsigned int event_id)
      * Upload metadata
      * -------------------------------------------------------- */
 
-    result = ftp->ftpClientPut(
-        local_file,
-        remote_file,
-        FTP_CLIENT_ASCII,
-        ftp_netbuf
-    );
+ftp_log_file_info(local_file);
+
+int64_t upload_start = esp_timer_get_time();
+
+ESP_LOGI(TAG, "FTP PUT iniciado: %s", remote_file);
+
+result = ftp->ftpClientPut(
+    local_file,
+    remote_file,
+    FTP_CLIENT_ASCII,
+    ftp_netbuf
+);
+
+int64_t upload_end = esp_timer_get_time();
+
+ESP_LOGI(TAG,
+         "FTP PUT finalizado: %s | retorno=%d | tempo=%lld ms",
+         remote_file,
+         result,
+         (long long)((upload_end - upload_start) / 1000));
 
 
     if (result <= 0)
