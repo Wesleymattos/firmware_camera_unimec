@@ -11,4 +11,11 @@ bool mqtt_manager_publish_alert(void);
 
 bool mqtt_manager_publish_vl53l0x_status(bool online);
 
+bool mqtt_manager_publish_ota_progress(
+    const char *status,
+    int progress,
+    int downloaded,
+    int total
+);
+
 #endif

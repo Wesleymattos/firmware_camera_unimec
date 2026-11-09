@@ -37,8 +37,16 @@
 
 static const char *TAG = "MAIN";
 
+
+#define FIRMWARE_VERSION "1.0.1-dev"
+
 void app_main(void)
 {
+
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "UNIMEC CAMERA");
+    ESP_LOGI(TAG, "Firmware: %s", FIRMWARE_VERSION);
+    ESP_LOGI(TAG, "========================================");
 
   /*
      * Inicializa NVS.
@@ -179,7 +187,7 @@ else
             /*
              * Inicializa módulo de upload FTP.
              */
-            cloud_upload_init();
+            //cloud_upload_init();
 
             /*
              * Inicializa servidor HTTP da câmera.

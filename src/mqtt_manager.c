@@ -10,6 +10,8 @@
 
 #include "ota_manager.h"
 
+#include <stdio.h>
+
 static const char *TAG = "MQTT";
 
 /*
@@ -32,6 +34,8 @@ static const char *TAG = "MQTT";
 
 
 #define MQTT_TOPIC_VL53L0X_STATUS "unimec/camera-01/sensor/vl53l0x/status"
+
+#define MQTT_TOPIC_OTA_PROGRESS "unimec/camera-01/ota/progress"
 
 
 
@@ -533,6 +537,58 @@ bool mqtt_manager_publish_alert(void)
         message
     );
 
+
+    return true;
+}
+
+bool mqtt_manager_publish_ota_progress(
+    const char *status,
+    int progress,
+    int downloaded,
+    int total
+)
+{
+    if (!mqtt_connected || mqtt_client == NULL)
+    {
+        ESP_LOGW(TAG, "MQTT desconectado. Progresso OTA nao enviado.");
+        return false;
+    }
+
+    char message[160];
+
+    snprintf(
+        message,
+        sizeof(message),
+        "{\"status\":\"%s\",\"progress\":%d,\"downloaded\":%d,\"total\":%d}",
+        status,
+        progress,
+        downloaded,
+        total
+    );
+
+    int msg_id = esp_mqtt_client_publish(
+        mqtt_client,
+        MQTT_TOPIC_OTA_PROGRESS,
+        message,
+        0,
+        1,
+        0
+    );
+
+    if (msg_id < 0)
+    {
+        ESP_LOGE(TAG, "Falha ao publicar progresso OTA");
+        return false;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "OTA: %s | %d%% | %d/%d bytes",
+        status,
+        progress,
+        downloaded,
+        total
+    );
 
     return true;
 }

@@ -17,6 +17,8 @@
 
 #include "led_status.h"
 
+#include "mqtt_manager.h"
+
 static const char *TAG = "OTA";
 
 #define OTA_TASK_STACK_SIZE 8192
@@ -37,6 +39,14 @@ static void ota_task(void *arg)
     ESP_LOGI(TAG, "Tarefa OTA iniciada");
     led_status_ota_start();
 
+
+    mqtt_manager_publish_ota_progress(
+    "starting",
+    0,
+    0,
+    0
+);
+
     /*
      * Aguarda a conexão PPP.
      */
@@ -50,22 +60,137 @@ static void ota_task(void *arg)
     ESP_LOGI(TAG, "Conexão PPP disponível");
     ESP_LOGI(TAG, "Iniciando download HTTPS");
 
-    esp_http_client_config_t http_config = {
-        .url = ota_firmware_url,
-        .timeout_ms = 30000,
-        .keep_alive_enable = true,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
+    ESP_LOGI(TAG, "URL recebida: [%s]", ota_firmware_url);
+ESP_LOGI(TAG, "Tamanho da URL: %d", (int)strlen(ota_firmware_url));
+
+esp_http_client_config_t http_config = {
+    .url = ota_firmware_url,
+    .timeout_ms = 60000,
+    .keep_alive_enable = true,
+    .crt_bundle_attach = esp_crt_bundle_attach,
+
+    .buffer_size = 4096,
+    .buffer_size_tx = 2048,
+};
 
     esp_https_ota_config_t ota_config = {
         .http_config = &http_config,
     };
 
-    esp_err_t err = esp_https_ota(&ota_config);
+
+
+    esp_https_ota_handle_t ota_handle = NULL;
+int image_size = 0;
+int image_read = 0;
+int last_progress = -1;
+int progress = 0;
+
+/* Início da sessão OTA */
+esp_err_t err = esp_https_ota_begin(
+    &ota_config,
+    &ota_handle
+);
+
+if (err != ESP_OK)
+{
+    ESP_LOGE(TAG, "Falha ao iniciar OTA: %s", esp_err_to_name(err));
+
+    mqtt_manager_publish_ota_progress(
+        "error",
+        0,
+        0,
+        0
+    );
+
+    ota_running = false;
+    ota_task_handle = NULL;
+    led_status_relay_off();
+    vTaskDelete(NULL);
+    return;
+}
+
+/* Obtém o tamanho total da imagem */
+image_size = esp_https_ota_get_image_size(ota_handle);
+
+ESP_LOGI(
+    TAG,
+    "Tamanho da imagem: %d bytes",
+    image_size
+);
+
+
+
+    /* Download da imagem com acompanhamento do progresso */
+while (1)
+{
+    err = esp_https_ota_perform(ota_handle);
+
+    if (err != ESP_ERR_HTTPS_OTA_IN_PROGRESS)
+    {
+        break;
+    }
+
+    image_read = esp_https_ota_get_image_len_read(ota_handle);
+
+    if (image_size > 0 && image_read >= 0)
+    {
+        progress = (image_read * 100) / image_size;
+
+        if (progress != last_progress)
+        {
+            last_progress = progress;
+
+            ESP_LOGI(
+                TAG,
+                "OTA: %d%% (%d / %d bytes)",
+                progress,
+                image_read,
+                image_size
+            );
+
+            mqtt_manager_publish_ota_progress(
+                "downloading",
+                progress,
+                image_read,
+                image_size
+            );
+        }
+    }
+}
+
+/* Verifica se o download terminou corretamente */
+if (err == ESP_OK &&
+    esp_https_ota_is_complete_data_received(ota_handle))
+{
+    ESP_LOGI(TAG, "Download completo. Validando firmware...");
+
+    mqtt_manager_publish_ota_progress(
+        "verifying",
+        100,
+        image_read,
+        image_size
+    );
+
+    err = esp_https_ota_finish(ota_handle);
+}
+else
+{
+    ESP_LOGE(TAG, "Download incompleto ou falhou");
+
+    esp_https_ota_abort(ota_handle);
+    err = ESP_FAIL;
+}
 
     if (err == ESP_OK)
     {
         ESP_LOGI(TAG, "OTA concluído com sucesso!");
+
+        mqtt_manager_publish_ota_progress(
+    "completed",
+    100,
+    image_size,
+    image_size
+);
         ESP_LOGI(TAG, "Reiniciando ESP32...");
 
         vTaskDelay(pdMS_TO_TICKS(1000));
