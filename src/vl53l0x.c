@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "driver/gpio.h"
+
 static const char *TAG = "VL53L0X";
 
 static i2c_master_bus_handle_t i2c_bus = NULL;
@@ -1950,6 +1952,33 @@ bool vl53l0x_init(void)
         "Endereco I2C: 0x%02X",
         VL53L0X_I2C_ADDRESS
     );
+
+
+
+/* --------------------------------------------------------
+ * XSHUT
+ * -------------------------------------------------------- */
+
+gpio_config_t xshut_config = {
+    .pin_bit_mask = (1ULL << VL53L0X_XSHUT_GPIO),
+    .mode = GPIO_MODE_OUTPUT,
+    .pull_up_en = GPIO_PULLUP_DISABLE,
+    .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    .intr_type = GPIO_INTR_DISABLE
+};
+
+ESP_ERROR_CHECK(gpio_config(&xshut_config));
+
+/* Mantém o sensor em reset */
+gpio_set_level(VL53L0X_XSHUT_GPIO, 0);
+vTaskDelay(pdMS_TO_TICKS(10));
+
+/* Libera o sensor */
+gpio_set_level(VL53L0X_XSHUT_GPIO, 1);
+vTaskDelay(pdMS_TO_TICKS(10));
+
+ESP_LOGI(TAG, "XSHUT configurado no GPIO %d", VL53L0X_XSHUT_GPIO);
+
 
 
     /* --------------------------------------------------------

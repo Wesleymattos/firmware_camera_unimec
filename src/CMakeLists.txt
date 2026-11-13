@@ -12,6 +12,9 @@ idf_component_register(
         led_strip
         ftpClient
         esp_modem
+        esp_netif
+        esp_event
+        esp_driver_gpio
         esp_https_ota
         esp_http_client
         mbedtls

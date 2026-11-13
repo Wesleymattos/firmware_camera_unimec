@@ -16,7 +16,7 @@ static led_strip_handle_t led_strip = NULL;
 /*
  * Define a cor do LED RGB.
  */
-static void led_status_set_color(
+ void led_status_set_color(
     uint8_t red,
     uint8_t green,
     uint8_t blue
