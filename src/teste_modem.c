@@ -6,7 +6,6 @@
 #include <stdint.h>
 
 #include "driver/uart.h"
-#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_err.h"
 
@@ -25,37 +24,14 @@
 #define TESTE_MODEM_BAUDRATE   9600
 #define TESTE_MODEM_BUF_SIZE   1024
 
+// Pino reservado para RESET manual do modem
 #define TESTE_MODEM_RESET_GPIO GPIO_NUM_47
 
 static const char *TAG = "TESTE_MODEM";
 
-static void teste_modem_reset(void)
-{
-    ESP_LOGI(TAG, "Acionando RESET do Y7080E");
-
-    gpio_config_t reset_config = {
-        .pin_bit_mask = (1ULL << TESTE_MODEM_RESET_GPIO),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-
-    ESP_ERROR_CHECK(gpio_config(&reset_config));
-
-    gpio_set_level(TESTE_MODEM_RESET_GPIO, 1);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    gpio_set_level(TESTE_MODEM_RESET_GPIO, 0);
-
-    ESP_LOGI(TAG, "Aguardando inicializacao do modem...");
-    vTaskDelay(pdMS_TO_TICKS(3000));
-}
-
 void teste_modem(void)
 {
     esp_err_t err;
-
-    teste_modem_reset();
 
     uart_config_t uart_config = {
         .baud_rate = TESTE_MODEM_BAUDRATE,
@@ -80,15 +56,27 @@ void teste_modem(void)
         return;
     }
 
-    uart_param_config(TESTE_MODEM_UART, &uart_config);
+    err = uart_param_config(TESTE_MODEM_UART, &uart_config);
 
-    uart_set_pin(
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Erro configurando UART: %s", esp_err_to_name(err));
+        uart_driver_delete(TESTE_MODEM_UART);
+        return;
+    }
+
+    err = uart_set_pin(
         TESTE_MODEM_UART,
         TESTE_MODEM_TX_GPIO,
         TESTE_MODEM_RX_GPIO,
         UART_PIN_NO_CHANGE,
         UART_PIN_NO_CHANGE
     );
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Erro configurando pinos UART: %s", esp_err_to_name(err));
+        uart_driver_delete(TESTE_MODEM_UART);
+        return;
+    }
 
     uart_flush_input(TESTE_MODEM_UART);
 
@@ -111,7 +99,7 @@ void teste_modem(void)
     while (1)
     {
         // Recebe caracteres do Monitor Serial USB
-int recebido = read(STDIN_FILENO, &caractere, 1);
+        int recebido = read(STDIN_FILENO, &caractere, 1);
 
         if (recebido > 0)
         {
@@ -121,8 +109,11 @@ int recebido = read(STDIN_FILENO, &caractere, 1);
                 {
                     comando[posicao] = '\0';
 
-                    if (strcmp(comando, "sair") == 0)
-                        break;
+if (strcmp(comando, "sair") == 0)
+{
+    ESP_LOGI(TAG, "Comando SAIR recebido. Encerrando testes...");
+    break;
+}
 
                     ESP_LOGI(TAG, "TX: %s", comando);
 

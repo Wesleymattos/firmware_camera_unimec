@@ -79,6 +79,19 @@ void app_main(void)
 
     /*
      * ========================================================
+     * RELE
+     * ========================================================
+     */
+
+    /*
+     * Inicializa relé.
+     */
+
+   relay_init();
+
+
+    /*
+     * ========================================================
      * TESTE MANUAL DO MODEM
      * ========================================================
      */
@@ -108,7 +121,9 @@ void app_main(void)
         ESP_ERROR_CHECK(err);
     }
 
-    //system_info_init();
+    system_info_init();
+
+
 
 
     /*
@@ -120,7 +135,7 @@ void app_main(void)
      * A conexão de dados será feita pelo modem.
      */
 
-    wifi_manager_init();
+    //wifi_manager_init();
 
 
     /*
@@ -184,8 +199,8 @@ void app_main(void)
     /*
      * Inicializa modem Y7080E.
      */
-
-    /*
+/*
+    
     ESP_LOGI(TAG, "Inicializando modem Y7080E...");
 
     esp_err_t modem_err = modem_y7080e_init();
@@ -198,29 +213,6 @@ void app_main(void)
     */
 
 
-    /*
-     * ========================================================
-     * SENSOR VL53L0X
-     * ========================================================
-     */
-
-    /*
-     * Inicializa VL53L0X.
-     */
-
-    
-    //bool vl53l0x_ok = vl53l0x_init();
-/*
-    if (vl53l0x_ok)
-    {
-        ESP_LOGI(TAG, "VL53L0X inicializado com sucesso!");
-    }
-    else
-    {
-        ESP_LOGE(TAG, "Falha ao inicializar VL53L0X!");
-    }
-    
-*/
     /*
      * ========================================================
      * SENSOR DE MOVIMENTO HC-SR501
@@ -246,17 +238,7 @@ void app_main(void)
     led_status_init();
 
 
-    /*
-     * ========================================================
-     * RELE
-     * ========================================================
-     */
 
-    /*
-     * Inicializa relé.
-     */
-
-   relay_init();
 
 
     /*
@@ -299,24 +281,6 @@ void app_main(void)
     event_manager_init();
 
 
-    /*
-     * ========================================================
-     * SERVICOS DE INTERNET
-     * ========================================================
-     *
-     * Controle de inicialização dos serviços
-     * dependentes da conexão de internet.
-     */
-
-
-    /*
-     * ========================================================
-     * LOOP PRINCIPAL
-     * ========================================================
-     *
-     * O VL53L0X e o detector continuam funcionando
-     * mesmo enquanto o modem está conectando.
-     */
 
 
 
@@ -391,32 +355,6 @@ void app_main(void)
         //servicos_inicializados = true;
 
 
-        /*
-         * ----------------------------------------------------
-         * LEITURA DO VL53L0X
-         * ----------------------------------------------------
-         */
-
-        
-        /*uint16_t distancia_mm;
-
-        if (vl53l0x_read_distance(&distancia_mm))
-        {
-            ESP_LOGI(
-                TAG,
-                "Distancia VL53L0X: %.2f m",
-                distancia_mm / 1000.0f
-            );
-        }
-        else
-        {
-            ESP_LOGE(
-                TAG,
-                "Falha na leitura do VL53L0X"
-            );
-        }
-        
-*/
 
         /*
          * ----------------------------------------------------
