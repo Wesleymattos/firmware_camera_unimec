@@ -281,7 +281,8 @@ void app_main(void)
     event_manager_init();
 
 
-
+mqtt_manager_init();
+cloud_upload_init();
 
 
 
