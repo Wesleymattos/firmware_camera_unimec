@@ -27,7 +27,7 @@
 #include "mqtt_manager.h"
 #include "cloud_upload.h"
 
-#include "vl53l0x.h"
+//#include "vl53l0x.h"
 #include "modem.h"
 #include "teste_modem.h"
 #include "ota_manager.h"
@@ -209,8 +209,8 @@ void app_main(void)
      */
 
     
-    bool vl53l0x_ok = vl53l0x_init();
-
+    //bool vl53l0x_ok = vl53l0x_init();
+/*
     if (vl53l0x_ok)
     {
         ESP_LOGI(TAG, "VL53L0X inicializado com sucesso!");
@@ -220,8 +220,7 @@ void app_main(void)
         ESP_LOGE(TAG, "Falha ao inicializar VL53L0X!");
     }
     
-
-
+*/
     /*
      * ========================================================
      * SENSOR DE MOVIMENTO HC-SR501
@@ -257,7 +256,7 @@ void app_main(void)
      * Inicializa relé.
      */
 
-   // relay_init();
+   relay_init();
 
 
     /*
@@ -399,7 +398,7 @@ void app_main(void)
          */
 
         
-        uint16_t distancia_mm;
+        /*uint16_t distancia_mm;
 
         if (vl53l0x_read_distance(&distancia_mm))
         {
@@ -417,7 +416,7 @@ void app_main(void)
             );
         }
         
-
+*/
 
         /*
          * ----------------------------------------------------
