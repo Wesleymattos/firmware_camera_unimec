@@ -26,7 +26,8 @@
 #define MODEM_Y7080E_RST_GPIO      47
 
 #define MODEM_Y7080E_UART          UART_NUM_1
-#define MODEM_Y7080E_BAUDRATE      9600
+#define MODEM_Y7080E_BAUDRATE 9600
+#define MODEM_Y7080E_FAST_BAUDRATE 115200
 
 #define MODEM_Y7080E_APN           "iot.datatem.com.br"
 
@@ -450,31 +451,97 @@ esp_err_t modem_y7080e_init(void)
 
     /* 1. Verifica comunicacao */
 
-    ESP_LOGI(TAG, "Verificando comunicacao com modem...");
+    
+/* ========================================
+ * 1. DETECCAO E CONFIGURACAO DA UART
+ * ======================================== */
 
+ESP_LOGI(TAG, "Verificando comunicacao com modem...");
+
+/* Primeiro tenta comunicar em 9600 baud */
+err = modem_send_at(
+    "AT",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+if (err == ESP_OK)
+{
+    ESP_LOGI(TAG, "Modem encontrado em 9600 baud");
+
+    /* Consulta velocidade atual */
     err = modem_send_at(
-        "AT",
+        "AT+IPR?",
         response,
         sizeof(response),
         MODEM_AT_TIMEOUT
     );
 
-if (err != ESP_OK)
-    goto modem_error;
+    if (err != ESP_OK)
+        goto modem_error;
 
-/* CONSULTA VELOCIDADE UART */
-ESP_LOGI(TAG, "Consultando velocidades UART...");
+    /* Solicita mudanca para 115200 */
+    ESP_LOGW(TAG, "Alterando modem para 115200 baud...");
 
+    err = modem_send_at(
+        "AT+IPR=115200",
+        response,
+        sizeof(response),
+        MODEM_AT_TIMEOUT
+    );
+
+    if (err != ESP_OK)
+        goto modem_error;
+
+    /* Altera a UART do ESP32 */
+    err = uart_set_baudrate(
+        MODEM_Y7080E_UART,
+        MODEM_Y7080E_FAST_BAUDRATE
+    );
+
+    if (err != ESP_OK)
+        goto modem_error;
+
+    uart_flush_input(MODEM_Y7080E_UART);
+
+    vTaskDelay(pdMS_TO_TICKS(300));
+}
+else
+{
+    /* Se falhou em 9600, tenta 115200 */
+    ESP_LOGW(TAG, "Sem resposta em 9600. Tentando 115200...");
+
+    err = uart_set_baudrate(
+        MODEM_Y7080E_UART,
+        MODEM_Y7080E_FAST_BAUDRATE
+    );
+
+    if (err != ESP_OK)
+        goto modem_error;
+
+    uart_flush_input(MODEM_Y7080E_UART);
+
+    vTaskDelay(pdMS_TO_TICKS(300));
+}
+
+/* Testa comunicacao na velocidade rapida */
 err = modem_send_at(
-    "AT+IPR=?",
+    "AT",
     response,
     sizeof(response),
     MODEM_AT_TIMEOUT
 );
 
 if (err != ESP_OK)
+{
+    ESP_LOGE(TAG, "Falha na comunicacao UART em 115200 baud!");
     goto modem_error;
+}
 
+ESP_LOGI(TAG, "Comunicacao UART em 115200 baud confirmada!");
+
+/* Confirma velocidade configurada */
 err = modem_send_at(
     "AT+IPR?",
     response,
@@ -484,6 +551,7 @@ err = modem_send_at(
 
 if (err != ESP_OK)
     goto modem_error;
+
 
 /* 2. Verifica SIM */
 ESP_LOGI(TAG, "Verificando cartao SIM...");
