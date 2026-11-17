@@ -47,6 +47,55 @@ static bool modem_connected = false;
 
 static SemaphoreHandle_t modem_mutex = NULL;
 
+static size_t socket_pending[2] = {0, 0};
+
+
+
+static void modem_parse_urc(const char *data)
+{
+    const char *p = data;
+
+    while ((p = strstr(p, "+NSONMI:")) != NULL)
+    {
+        int socket_id;
+        unsigned int length;
+
+        if (sscanf(p, "+NSONMI:%d,%u", &socket_id, &length) == 2)
+        {
+            if (socket_id >= 0 && socket_id < 2)
+            {
+                socket_pending[socket_id] = length;
+
+                ESP_LOGI(TAG,
+                         "Socket %d: %u bytes pendentes",
+                         socket_id,
+                         length);
+            }
+        }
+
+        p += strlen("+NSONMI:");
+    }
+}
+
+
+
+size_t modem_y7080e_socket_available(int socket_id)
+{
+    if (socket_id < 0 || socket_id >= 2)
+        return 0;
+
+    size_t pending = 0;
+
+    if (xSemaphoreTake(modem_mutex, pdMS_TO_TICKS(1000)) == pdTRUE)
+    {
+        pending = socket_pending[socket_id];
+        xSemaphoreGive(modem_mutex);
+    }
+
+    return pending;
+}
+
+
 
 /* =========================================================
    FUNCOES INTERNAS
@@ -68,7 +117,7 @@ static esp_err_t modem_send_at(
 
     memset(response, 0, response_size);
 
-    uart_flush_input(MODEM_Y7080E_UART);
+  
 
     char cmd[1600];
 
@@ -134,6 +183,8 @@ static esp_err_t modem_send_at(
             break;
     }
 
+    modem_parse_urc(response);
+
     ESP_LOGI(TAG, "AT: %s", command);
     ESP_LOGI(TAG, "Resposta: %s", response);
 
@@ -179,15 +230,143 @@ void modem_y7080e_reset(void)
 }
 
 
+
+
 /* =========================================================
-   INICIALIZACAO
-   ========================================================= */
+ * AGUARDA REGISTRO NA REDE CELULAR
+ * Deve ser chamada com modem_mutex adquirido.
+ * ========================================================= */
+
+static esp_err_t modem_wait_network(uint32_t timeout_ms)
+{
+    ESP_LOGI(TAG, "Aguardando registro na rede celular...");
+
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(timeout_ms);
+
+    while ((xTaskGetTickCount() - start) < timeout)
+    {
+        char response[MODEM_AT_RESPONSE_SIZE] = {0};
+
+        esp_err_t err = modem_send_at(
+            "AT+CEREG?",
+            response,
+            sizeof(response),
+            MODEM_AT_TIMEOUT
+        );
+
+        if (err == ESP_OK)
+        {
+           int stat = -1;
+bool status_encontrado = false;
+
+char *p = response;
+
+while ((p = strstr(p, "+CEREG:")) != NULL)
+{
+    int n = -1;
+    int s = -1;
+
+    if (sscanf(p, "+CEREG: %d,%d", &n, &s) == 2)
+    {
+        // A consulta AT+CEREG? está retornando n=3.
+        // Ignora URCs e valores que não são status válidos.
+        if (n == 3 && s >= 0 && s <= 5)
+        {
+            stat = s;
+            status_encontrado = true;
+        }
+    }
+
+    p += strlen("+CEREG:");
+}
+
+if (status_encontrado)
+{
+    ESP_LOGI(TAG, "Registro celular: %d", stat);
+
+    if (stat == 1 || stat == 5)
+    {
+        ESP_LOGI(TAG, "Registro na rede confirmado!");
+        return ESP_OK;
+    }
+}
+else
+{
+    ESP_LOGW(TAG, "Resposta CEREG nao reconhecida: %s", response);
+}
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    ESP_LOGE(TAG, "Timeout aguardando registro celular");
+
+    return ESP_ERR_TIMEOUT;
+}
+
+
+/* =========================================================
+ * AGUARDA CONEXAO A REDE DE PACOTES
+ * Deve ser chamada com modem_mutex adquirido.
+ * ========================================================= */
+
+static esp_err_t modem_wait_packet_attach(uint32_t timeout_ms)
+{
+    ESP_LOGI(TAG, "Aguardando conexao de pacotes...");
+
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(timeout_ms);
+
+    while ((xTaskGetTickCount() - start) < timeout)
+    {
+        char response[MODEM_AT_RESPONSE_SIZE] = {0};
+
+        esp_err_t err = modem_send_at(
+            "AT+CGATT?",
+            response,
+            sizeof(response),
+            MODEM_AT_TIMEOUT
+        );
+
+        if (err == ESP_OK)
+        {
+            int attached = -1;
+            char *p = strstr(response, "+CGATT:");
+
+            if (p != NULL &&
+                sscanf(p, "+CGATT: %d", &attached) == 1)
+            {
+                ESP_LOGI(TAG, "Estado CGATT: %d", attached);
+
+                if (attached == 1)
+                {
+                    ESP_LOGI(TAG, "Conexao de pacotes confirmada!");
+                    return ESP_OK;
+                }
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    ESP_LOGE(TAG, "Timeout aguardando CGATT");
+
+    return ESP_ERR_TIMEOUT;
+}
+
+
+/* =========================================================
+ * INICIALIZACAO DO Y7080E
+ * ========================================================= */
 
 esp_err_t modem_y7080e_init(void)
 {
     esp_err_t err;
 
     ESP_LOGI(TAG, "Inicializando Y7080E");
+
+    modem_connected = false;
 
     /* GPIO RESET */
 
@@ -228,14 +407,12 @@ esp_err_t modem_y7080e_init(void)
 
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "Erro instalando UART: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Erro instalando UART: %s",
+                 esp_err_to_name(err));
         return err;
     }
 
-    err = uart_param_config(
-        MODEM_Y7080E_UART,
-        &uart_config
-    );
+    err = uart_param_config(MODEM_Y7080E_UART, &uart_config);
 
     if (err != ESP_OK)
         return err;
@@ -262,15 +439,77 @@ esp_err_t modem_y7080e_init(void)
     ESP_LOGI(TAG, "TX GPIO: %d", MODEM_Y7080E_TX_GPIO);
     ESP_LOGI(TAG, "RX GPIO: %d", MODEM_Y7080E_RX_GPIO);
 
-    /* Reset do modem */
+    /* RESET FISICO */
 
     modem_y7080e_reset();
 
-    /* Configuracao do contexto de dados */
-
     char response[MODEM_AT_RESPONSE_SIZE];
 
-    xSemaphoreTake(modem_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(modem_mutex, portMAX_DELAY) != pdTRUE)
+        return ESP_FAIL;
+
+    /* 1. Verifica comunicacao */
+
+    ESP_LOGI(TAG, "Verificando comunicacao com modem...");
+
+    err = modem_send_at(
+        "AT",
+        response,
+        sizeof(response),
+        MODEM_AT_TIMEOUT
+    );
+
+if (err != ESP_OK)
+    goto modem_error;
+
+/* CONSULTA VELOCIDADE UART */
+ESP_LOGI(TAG, "Consultando velocidades UART...");
+
+err = modem_send_at(
+    "AT+IPR=?",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+if (err != ESP_OK)
+    goto modem_error;
+
+err = modem_send_at(
+    "AT+IPR?",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+if (err != ESP_OK)
+    goto modem_error;
+
+/* 2. Verifica SIM */
+ESP_LOGI(TAG, "Verificando cartao SIM...");
+
+    err = modem_send_at(
+        "AT+CPIN?",
+        response,
+        sizeof(response),
+        MODEM_AT_TIMEOUT
+    );
+
+    if (err != ESP_OK)
+        goto modem_error;
+
+    if (strstr(response, "READY") == NULL)
+    {
+        ESP_LOGE(TAG, "SIM nao esta pronto: %s", response);
+        err = ESP_ERR_INVALID_STATE;
+        goto modem_error;
+    }
+
+    ESP_LOGI(TAG, "SIM pronto");
+
+    /* 3. Configura APN */
+
+    ESP_LOGI(TAG, "Configurando APN...");
 
     err = modem_send_at(
         "AT+CGDCONT=1,\"IP\",\"" MODEM_Y7080E_APN "\"",
@@ -279,30 +518,160 @@ esp_err_t modem_y7080e_init(void)
         MODEM_AT_TIMEOUT
     );
 
-    if (err == ESP_OK)
+    if (err != ESP_OK)
+        goto modem_error;
+
+
+
+ESP_LOGW(TAG, "========== DIAGNOSTICO ==========");
+
+modem_send_at("AT+CSQ", response,
+              sizeof(response), MODEM_AT_TIMEOUT);
+
+modem_send_at("AT+CESQ", response,
+              sizeof(response), MODEM_AT_TIMEOUT);
+
+modem_send_at("AT+COPS?", response,
+              sizeof(response), MODEM_AT_TIMEOUT);
+
+modem_send_at("AT+CEER", response,
+              sizeof(response), MODEM_AT_TIMEOUT);
+
+ESP_LOGW(TAG, "=================================");
+
+
+    /* 4. Aguarda registro celular */
+
+    err = modem_wait_network(300000);
+
+    if (err != ESP_OK)
+        goto modem_error;
+
+    /* 5. Aguarda conexao de pacotes */
+
+    err = modem_wait_packet_attach(60000);
+
+    if (err != ESP_OK)
+        goto modem_error;
+
+    /* 6. Ativa contexto PDP */
+
+    ESP_LOGI(TAG, "Ativando contexto PDP...");
+
+    err = modem_send_at(
+        "AT+CGACT=1,1",
+        response,
+        sizeof(response),
+        60000
+    );
+
+    if (err != ESP_OK)
+        goto modem_error;
+
+
+        /* DIAGNOSTICO DE REDE */
+ESP_LOGI(TAG, "========== DIAGNOSTICO DE REDE ==========");
+
+modem_send_at(
+    "AT+CSQ",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+modem_send_at(
+    "AT+CESQ",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+modem_send_at(
+    "AT+COPS?",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+modem_send_at(
+    "AT+CEER",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+ESP_LOGI(TAG, "=========================================");
+
+    /* 7. Confirma contexto PDP */
+
+    ESP_LOGI(TAG, "Verificando contexto PDP...");
+
+    err = modem_send_at(
+        "AT+CGACT?",
+        response,
+        sizeof(response),
+        MODEM_AT_TIMEOUT
+    );
+
+    if (err != ESP_OK)
+        goto modem_error;
+
     {
-        err = modem_send_at(
-            "AT+CGACT=1,1",
-            response,
-            sizeof(response),
-            MODEM_AT_TIMEOUT
-        );
+        int cid = -1;
+        int active = -1;
+
+        char *p = strstr(response, "+CGACT:");
+
+        if (p == NULL ||
+            sscanf(p, "+CGACT: %d,%d", &cid, &active) != 2 ||
+            cid != 1 || active != 1)
+        {
+            ESP_LOGE(TAG, "Contexto PDP nao esta ativo: %s",
+                     response);
+
+            err = ESP_FAIL;
+            goto modem_error;
+        }
     }
+
+    /* 8. Ativa notificacoes de socket */
+
+    ESP_LOGI(TAG, "Ativando notificacoes NSONMI...");
+
+    err = modem_send_at(
+        "AT+NSONMI=1",
+        response,
+        sizeof(response),
+        MODEM_AT_TIMEOUT
+    );
+
+    if (err != ESP_OK)
+        goto modem_error;
 
     xSemaphoreGive(modem_mutex);
 
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Falha configurando contexto PDP");
-        modem_connected = false;
-        return err;
-    }
-
     modem_connected = true;
 
-    ESP_LOGI(TAG, "Camada de transporte inicializada");
+    ESP_LOGI(TAG, "==================================");
+    ESP_LOGI(TAG, "Y7080E INICIALIZADO COM SUCESSO");
+    ESP_LOGI(TAG, "Registro celular: OK");
+    ESP_LOGI(TAG, "CGATT: OK");
+    ESP_LOGI(TAG, "PDP: ATIVO");
+    ESP_LOGI(TAG, "==================================");
 
     return ESP_OK;
+
+
+modem_error:
+
+    ESP_LOGE(TAG, "Falha na inicializacao: %s",
+             esp_err_to_name(err));
+
+    modem_connected = false;
+
+    xSemaphoreGive(modem_mutex);
+
+    return err;
 }
 
 
@@ -345,11 +714,11 @@ esp_err_t modem_y7080e_socket_open(int *socket_id)
 
     long id = strtol(p, &end, 10);
 
-    if (end == p || id < 0)
-    {
-        ESP_LOGE(TAG, "Nao foi possivel obter socket ID");
-        return ESP_FAIL;
-    }
+ if (end == p || id < 0 || id > 1)
+{
+    ESP_LOGE(TAG, "Socket ID invalido: %ld", id);
+    return ESP_FAIL;
+}
 
     *socket_id = (int)id;
 
@@ -368,8 +737,13 @@ esp_err_t modem_y7080e_socket_connect(
     const char *server_ip,
     uint16_t server_port)
 {
-    if (server_ip == NULL)
+    if (socket_id < 0 || socket_id >= 2 ||
+        server_ip == NULL ||
+        server_port == 0 ||
+        !modem_connected)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     char command[160];
     char response[MODEM_AT_RESPONSE_SIZE];
@@ -409,16 +783,19 @@ esp_err_t modem_y7080e_socket_connect(
 }
 
 
+
+
 /* =========================================================
    ENVIAR DADOS PELO SOCKET
    ========================================================= */
+
 
 esp_err_t modem_y7080e_socket_send(
     int socket_id,
     const uint8_t *data,
     size_t length)
 {
-    if (data == NULL || length == 0)
+    if (data == NULL || length == 0 || !modem_connected)
         return ESP_ERR_INVALID_ARG;
 
     size_t offset = 0;
@@ -468,15 +845,46 @@ esp_err_t modem_y7080e_socket_send(
 
         if (err != ESP_OK)
         {
-            xSemaphoreGive(modem_mutex);
             ESP_LOGE(TAG, "Erro enviando dados pelo socket %d", socket_id);
+            xSemaphoreGive(modem_mutex);
             return err;
+        }
+
+        /* Confere socket e quantidade aceita */
+        char expected[40];
+
+        snprintf(
+            expected,
+            sizeof(expected),
+            "\r\n%d,%u\r\n",
+            socket_id,
+            (unsigned int)chunk
+        );
+
+        if (strstr(response, expected) == NULL)
+        {
+            ESP_LOGE(
+                TAG,
+                "Confirmacao invalida. Esperado: %s | Resposta: %s",
+                expected,
+                response
+            );
+
+            xSemaphoreGive(modem_mutex);
+            return ESP_FAIL;
         }
 
         offset += chunk;
     }
 
     xSemaphoreGive(modem_mutex);
+
+    ESP_LOGI(
+        TAG,
+        "Envio concluido: socket=%d, bytes=%u",
+        socket_id,
+        (unsigned int)length
+    );
 
     return ESP_OK;
 }
@@ -491,7 +899,11 @@ int modem_y7080e_socket_receive(
     uint8_t *buffer,
     size_t buffer_size)
 {
-    if (buffer == NULL || buffer_size == 0)
+
+        if (socket_id < 0 || socket_id >= 2)
+        return -1;
+
+        if (buffer == NULL || buffer_size == 0)
         return -1;
 
     size_t requested = buffer_size;
@@ -508,6 +920,26 @@ int modem_y7080e_socket_receive(
     int data_length;
     int remote_port;
     int remaining;
+/*
+    snprintf(
+        command,
+        sizeof(command),
+        "AT+NSORF=%d,%u",
+        socket_id,
+        (unsigned int)requested
+    );
+
+    */
+
+    requested = 20;
+
+
+esp_err_t err = ESP_FAIL;
+bool leitura_ok = false;
+
+for (int tentativa = 1; tentativa <= 3; tentativa++)
+{
+    memset(response, 0, sizeof(response));
 
     snprintf(
         command,
@@ -519,7 +951,7 @@ int modem_y7080e_socket_receive(
 
     xSemaphoreTake(modem_mutex, portMAX_DELAY);
 
-    esp_err_t err = modem_send_at(
+    err = modem_send_at(
         command,
         response,
         sizeof(response),
@@ -528,24 +960,79 @@ int modem_y7080e_socket_receive(
 
     xSemaphoreGive(modem_mutex);
 
-    if (err != ESP_OK)
+    // O modem pode retornar 8002 temporariamente.
+    if (strstr(response, "+CME ERROR:8002") != NULL)
+    {
+        ESP_LOGW(
+            TAG,
+            "NSORF ocupado. Tentativa %d/3",
+            tentativa
+        );
+
+        if (tentativa < 3)
+        {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
         return -1;
+    }
 
-    char *p = strstr(response, "+NSORF:");
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Erro na leitura NSORF: %s", response);
+        return -1;
+    }
 
-    if (p == NULL)
-        return 0;
+    leitura_ok = true;
+    break;
+}
 
-    int parsed = sscanf(
-        p,
-        "+NSORF: %d,%d,%63[^,],%d,%1400[^,],%d",
-        &response_socket,
-        &data_length,
-        remote_ip,
-        &remote_port,
-        hex_data,
-        &remaining
-    );
+if (!leitura_ok)
+    return -1;
+
+
+char *p = strstr(response, "+NSORF:");
+
+if (p == NULL)
+{
+    if (xSemaphoreTake(modem_mutex, pdMS_TO_TICKS(1000)) == pdTRUE)
+    {
+        socket_pending[socket_id] = 0;
+        xSemaphoreGive(modem_mutex);
+    }
+
+    return 0;
+}
+
+
+int parsed = sscanf(
+    p,
+    "+NSORF: %d,%63[^,],%d,%d,%1400[^,],%d",
+    &response_socket,
+    remote_ip,
+    &remote_port,
+    &data_length,
+    hex_data,
+    &remaining
+);
+
+if (parsed != 6 || response_socket != socket_id)
+{
+    ESP_LOGE(TAG, "Resposta NSORF invalida: %s", p);
+    return -1;
+}
+
+ESP_LOGI(
+    TAG,
+    "NSORF: socket=%d, IP=%s, porta=%d, bytes=%d, restantes=%d",
+    response_socket,
+    remote_ip,
+    remote_port,
+    data_length,
+    remaining
+);
+
 
     if (parsed != 6 || response_socket != socket_id)
     {
@@ -554,7 +1041,15 @@ int modem_y7080e_socket_receive(
     }
 
     if (data_length <= 0)
+    {
+        if (xSemaphoreTake(modem_mutex, pdMS_TO_TICKS(1000)) == pdTRUE)
+        {
+            socket_pending[socket_id] = remaining;
+            xSemaphoreGive(modem_mutex);
+        }
+
         return 0;
+    }
 
     if ((size_t)data_length > buffer_size)
         data_length = buffer_size;
@@ -571,6 +1066,12 @@ int modem_y7080e_socket_receive(
             hex_data[i * 2],
             hex_data[i * 2 + 1]
         );
+    }
+
+        if (xSemaphoreTake(modem_mutex, pdMS_TO_TICKS(1000)) == pdTRUE)
+    {
+        socket_pending[socket_id] = remaining;
+        xSemaphoreGive(modem_mutex);
     }
 
     ESP_LOGI(
@@ -590,6 +1091,8 @@ int modem_y7080e_socket_receive(
 
 esp_err_t modem_y7080e_socket_close(int socket_id)
 {
+        if (socket_id < 0 || socket_id >= 2)
+        return ESP_ERR_INVALID_ARG;
     char command[64];
     char response[512];
 

@@ -40,6 +40,43 @@ static const char *TAG = "MAIN";
 
 #define FIRMWARE_VERSION "1.0.2-dev_teste"
 
+#define MODEM_INIT_TASK_STACK 12288
+#define MODEM_INIT_TASK_PRIORITY 5
+
+static void modem_init_task(void *arg)
+{
+    (void)arg;
+
+    ESP_LOGI(TAG, "Task de inicializacao do Y7080E iniciada");
+
+    esp_err_t err = modem_y7080e_init();
+
+    if (err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Y7080E inicializado com sucesso!");
+
+        cloud_upload_init();
+
+        ESP_LOGI(TAG, "Modulo FTP pronto para testes");
+
+        ESP_LOGI(TAG, "Iniciando teste de upload FTP...");
+
+        cloud_upload_start_test();
+    }
+    else
+    {
+        ESP_LOGE(TAG,
+                 "Falha na inicializacao do Y7080E: %s",
+                 esp_err_to_name(err));
+    }
+
+    ESP_LOGI(TAG, "Stack livre restante: %u bytes",
+             (unsigned int)uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t));
+
+    vTaskDelete(NULL);
+}
+
+
 
 void app_main(void)
 {
@@ -87,7 +124,7 @@ void app_main(void)
      * Inicializa relé.
      */
 
-   relay_init();
+   //relay_init();
 
 
     /*
@@ -121,7 +158,7 @@ void app_main(void)
         ESP_ERROR_CHECK(err);
     }
 
-    system_info_init();
+    //system_info_init();
 
 
 
@@ -148,7 +185,7 @@ void app_main(void)
      * Inicializa câmera.
      */
 
-    camera_init();
+    //camera_init();
 
 
     /*
@@ -199,20 +236,27 @@ void app_main(void)
     /*
      * Inicializa modem Y7080E.
      */
-/*
+
     
-    ESP_LOGI(TAG, "Inicializando modem Y7080E...");
+   ESP_LOGI(TAG, "Inicializando modem Y7080E...");
 
-    esp_err_t modem_err = modem_y7080e_init();
+BaseType_t task_result = xTaskCreate(
+    modem_init_task,
+    "modem_init",
+    MODEM_INIT_TASK_STACK,
+    NULL,
+    MODEM_INIT_TASK_PRIORITY,
+    NULL
+);
 
-    if (modem_err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Y7080E nao iniciou: %s",
-                 esp_err_to_name(modem_err));
-    }
-    */
-
-
+if (task_result != pdPASS)
+{
+    ESP_LOGE(TAG, "Falha ao criar task do modem");
+}
+else
+{
+    ESP_LOGI(TAG, "Task do modem criada com sucesso");
+}
     /*
      * ========================================================
      * SENSOR DE MOVIMENTO HC-SR501
@@ -223,7 +267,7 @@ void app_main(void)
      * Inicializa sensor de movimento HC-SR501.
      */
 
-    hc_sr501_init();
+            //hc_sr501_init();
 
 
     /*
@@ -235,7 +279,7 @@ void app_main(void)
      * Azul     = relé ligado
      */
 
-    led_status_init();
+            //led_status_init();
 
 
 
@@ -251,7 +295,7 @@ void app_main(void)
      * Inicializa detector.
      */
 
-    detector_init();
+    //detector_init();
 
 
     /*
@@ -265,7 +309,7 @@ void app_main(void)
      * de fotos dos eventos.
      */
 
-    event_camera_init();
+   // event_camera_init();
 
 
     /*
@@ -278,11 +322,11 @@ void app_main(void)
      * Inicializa gerenciador de eventos.
      */
 
-    event_manager_init();
+    //event_manager_init();
 
 
-mqtt_manager_init();
-cloud_upload_init();
+    //mqtt_manager_init();
+    //cloud_upload_init();
 
 
 
@@ -333,7 +377,7 @@ cloud_upload_init();
          * ----------------------------------------------------
          */
 
-        mqtt_manager_init();
+       // mqtt_manager_init();
 
 
         /*
@@ -342,7 +386,7 @@ cloud_upload_init();
          * ----------------------------------------------------
          */
 
-        cloud_upload_init();
+        //cloud_upload_init();
 
 
         /*
@@ -402,14 +446,14 @@ cloud_upload_init();
          * DETECTOR DE PESSOA
          * ----------------------------------------------------
          */
-
+/*
         
         if (detector_pessoa_detectada())
         {
             event_manager_pessoa_detectada();
         }
         
-
+*/
 
         /*
          * ----------------------------------------------------
@@ -417,7 +461,7 @@ cloud_upload_init();
          * ----------------------------------------------------
          */
 
-        event_manager_process();
+        //event_manager_process();
 
 
         /*
@@ -426,7 +470,7 @@ cloud_upload_init();
          * ----------------------------------------------------
          */
 
-        system_info_log();
+        //system_info_log();
 
 
         /*
