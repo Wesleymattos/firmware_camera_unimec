@@ -541,6 +541,25 @@ if (err != ESP_OK)
 
 ESP_LOGI(TAG, "Comunicacao UART em 115200 baud confirmada!");
 
+/* CONSULTA VERSAO DO FIRMWARE */
+ESP_LOGI(TAG, "Consultando firmware do Y7080E...");
+
+err = modem_send_at(
+    "AT+CGMR",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+if (err == ESP_OK)
+{
+    ESP_LOGI(TAG, "VERSAO DO FIRMWARE: %s", response);
+}
+else
+{
+    ESP_LOGW(TAG, "Nao foi possivel consultar o firmware");
+}
+
 /* Confirma velocidade configurada */
 err = modem_send_at(
     "AT+IPR?",
@@ -608,6 +627,20 @@ modem_send_at("AT+CEER", response,
 ESP_LOGW(TAG, "=================================");
 
 
+
+/* TESTE DE SUPORTE MQTT NATIVO */
+
+ESP_LOGI(TAG, "Testando comandos MQTT do Y7080E...");
+
+err = modem_send_at(
+    "AT+MQNEW=200.234.212.167,1883,5000,200",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+ESP_LOGI(TAG, "Resultado do teste MQTT: %s", response);
+
     /* 4. Aguarda registro celular */
 
     err = modem_wait_network(300000);
@@ -622,19 +655,35 @@ ESP_LOGW(TAG, "=================================");
     if (err != ESP_OK)
         goto modem_error;
 
-    /* 6. Ativa contexto PDP */
+   /* 6. Ativa contexto PDP */
 
-    ESP_LOGI(TAG, "Ativando contexto PDP...");
+ESP_LOGI(TAG, "Ativando contexto PDP...");
 
-    err = modem_send_at(
-        "AT+CGACT=1,1",
-        response,
-        sizeof(response),
-        60000
-    );
+err = modem_send_at(
+    "AT+CGACT=1,1",
+    response,
+    sizeof(response),
+    60000
+);
 
-    if (err != ESP_OK)
-        goto modem_error;
+if (err != ESP_OK)
+    goto modem_error;
+
+
+/* 7. TESTE MQTT NATIVO */
+
+ESP_LOGI(TAG, "Testando MQTT nativo...");
+
+err = modem_send_at(
+    "AT+MQNEW=200.234.212.167,1883,5000,200",
+    response,
+    sizeof(response),
+    15000
+);
+
+ESP_LOGI(TAG, "Resultado MQTT: %s", response);
+
+        
 
 
         /* DIAGNOSTICO DE REDE */
@@ -1196,4 +1245,61 @@ esp_err_t modem_y7080e_socket_close(int socket_id)
 bool modem_y7080e_is_connected(void)
 {
     return modem_connected;
+}
+
+
+
+#include <stdio.h>
+#include <string.h>
+
+void modem_y7080e_manual_at_mode(void)
+{
+    char command[128];
+    char response[MODEM_AT_RESPONSE_SIZE];
+
+    ESP_LOGW(TAG, "================================");
+    ESP_LOGW(TAG, "MODO AT MANUAL");
+    ESP_LOGW(TAG, "Digite um comando AT no Monitor Serial");
+    ESP_LOGW(TAG, "Digite sair para continuar");
+    ESP_LOGW(TAG, "================================");
+
+    while (1)
+    {
+        printf("\nAT> ");
+        fflush(stdout);
+
+        if (fgets(command, sizeof(command), stdin) == NULL)
+            continue;
+
+        command[strcspn(command, "\r\n")] = '\0';
+
+        if (strlen(command) == 0)
+            continue;
+
+        if (strcmp(command, "sair") == 0)
+            break;
+
+        memset(response, 0, sizeof(response));
+
+        xSemaphoreTake(modem_mutex, portMAX_DELAY);
+
+        esp_err_t err = modem_send_at(
+            command,
+            response,
+            sizeof(response),
+            MODEM_AT_TIMEOUT
+        );
+
+        xSemaphoreGive(modem_mutex);
+
+        if (err == ESP_OK)
+            printf("\nRESPOSTA:\n%s\n", response);
+        else
+            printf("\nERRO: %s\n", esp_err_to_name(err));
+            
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    ESP_LOGW(TAG, "Saindo do modo AT manual");
 }

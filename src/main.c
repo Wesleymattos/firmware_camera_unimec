@@ -53,26 +53,18 @@ static void modem_init_task(void *arg)
 
     ESP_LOGI(TAG, "Task de inicializacao do Y7080E iniciada");
 
-    esp_err_t err = modem_y7080e_init();
+esp_err_t err = modem_y7080e_init();
 
-    if (err == ESP_OK)
-    {
-        ESP_LOGI(TAG, "Y7080E inicializado com sucesso!");
-
-        cloud_upload_init();
-
-        ESP_LOGI(TAG, "Modulo FTP pronto para testes");
-
-        ESP_LOGI(TAG, "Iniciando teste de upload FTP...");
-
-        cloud_upload_start_test();
-    }
-    else
-    {
-        ESP_LOGE(TAG,
-                 "Falha na inicializacao do Y7080E: %s",
-                 esp_err_to_name(err));
-    }
+if (err == ESP_OK)
+{
+    ESP_LOGI(TAG, "Y7080E inicializado com sucesso!");
+}
+else
+{
+    ESP_LOGE(TAG,
+             "Falha na inicializacao do Y7080E: %s",
+             esp_err_to_name(err));
+}
 
     ESP_LOGI(TAG, "Stack livre restante: %u bytes",
              (unsigned int)uxTaskGetStackHighWaterMark(NULL) *
@@ -88,6 +80,7 @@ static void modem_init_task(void *arg)
 
 void app_main(void)
 {
+    
     esp_err_t err;
 
     /*
@@ -210,6 +203,9 @@ void app_main(void)
     ESP_LOGI(TAG, "Inicializando Event Manager...");
     event_manager_init();
 
+    ESP_LOGI(TAG, "Inicializando gerenciador FTP...");
+    cloud_upload_init();
+
 
     /*
      * ========================================================
@@ -253,6 +249,7 @@ void app_main(void)
     }
 
 
+    
     /*
      * ========================================================
      * 13. MQTT

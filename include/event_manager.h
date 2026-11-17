@@ -11,4 +11,6 @@ void event_manager_process(void);
 
 void event_manager_desarmar(void);
 
+void modem_y7080e_manual_at_mode(void);
+
 #endif

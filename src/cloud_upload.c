@@ -17,6 +17,8 @@
 
 #include "modem_y7080e.h"
 
+#include "freertos/queue.h"
+
 static const char *TAG = "CLOUD_UPLOAD";
 
 /* ============================================================
@@ -44,6 +46,14 @@ static const char *TAG = "CLOUD_UPLOAD";
 /* Impede duas transferencias simultaneas pelo mesmo modem. */
 static SemaphoreHandle_t s_upload_mutex = NULL;
 
+
+#define FTP_EVENT_QUEUE_LENGTH 20
+
+static QueueHandle_t s_event_queue = NULL;
+static TaskHandle_t s_upload_worker_task = NULL;
+
+static void cloud_upload_worker_task(void *arg);
+
 /* ============================================================
  * INICIALIZACAO
  * ============================================================ */
@@ -55,19 +65,43 @@ void cloud_upload_init(void)
         s_upload_mutex = xSemaphoreCreateMutex();
     }
 
-    ESP_LOGI(TAG, "======================================");
-    ESP_LOGI(TAG, "Inicializando modulo FTP Y7080E...");
-    ESP_LOGI(TAG, "Servidor: %s:%d", FTP_SERVER, FTP_PORT);
-    ESP_LOGI(TAG, "Equipamento: %s", DEVICE_NAME);
-
-    if (s_upload_mutex == NULL)
+    if (s_event_queue == NULL)
     {
-        ESP_LOGE(TAG, "Falha ao criar mutex FTP!");
+        s_event_queue = xQueueCreate(
+            FTP_EVENT_QUEUE_LENGTH,
+            sizeof(unsigned int)
+        );
     }
 
-    ESP_LOGI(TAG, "======================================");
-}
+    if (s_upload_mutex == NULL || s_event_queue == NULL)
+    {
+        ESP_LOGE(TAG, "Falha ao inicializar recursos FTP");
+        return;
+    }
 
+    if (s_upload_worker_task == NULL)
+    {
+        BaseType_t result = xTaskCreate(
+            cloud_upload_worker_task,
+            "ftp_worker",
+            FTP_TASK_STACK_SIZE,
+            NULL,
+            FTP_TASK_PRIORITY,
+            &s_upload_worker_task
+        );
+
+        if (result != pdPASS)
+        {
+            s_upload_worker_task = NULL;
+            ESP_LOGE(TAG, "Falha ao criar task de upload");
+            return;
+        }
+    }
+
+    ESP_LOGI(TAG, "Gerenciador FTP inicializado");
+    ESP_LOGI(TAG, "Fila preparada para %d eventos",
+             FTP_EVENT_QUEUE_LENGTH);
+}
 /* ============================================================
  * NAVEGACAO DE DIRETORIOS
  * ============================================================ */
@@ -384,63 +418,68 @@ cleanup:
  * TASK DE UPLOAD
  * ============================================================ */
 
-static void cloud_upload_event_task(void *arg)
+static void cloud_upload_worker_task(void *arg)
 {
-    unsigned int event_id = *((unsigned int *)arg);
+    (void)arg;
 
-    free(arg);
+    unsigned int event_id;
 
-    ESP_LOGI(TAG, "Task FTP iniciada para evento %06u", event_id);
+    ESP_LOGI(TAG, "Worker FTP iniciado");
 
-    bool result = cloud_upload_event(event_id);
-
-    if (result)
+    while (1)
     {
-        ESP_LOGI(TAG, "Evento %06u enviado com sucesso!", event_id);
-    }
-    else
-    {
-        ESP_LOGE(TAG, "Falha no upload do evento %06u", event_id);
-    }
+        if (xQueueReceive(
+                s_event_queue,
+                &event_id,
+                portMAX_DELAY) == pdTRUE)
+        {
+            ESP_LOGI(TAG, "Evento %06u recebido pela fila", event_id);
 
-    ESP_LOGI(TAG, "Task FTP finalizada");
+            while (!modem_y7080e_is_connected())
+            {
+                ESP_LOGW(TAG, "Aguardando conexao do Y7080E...");
+                vTaskDelay(pdMS_TO_TICKS(2000));
+            }
 
-    vTaskDelete(NULL);
+            while (1)
+            {
+                if (cloud_upload_event(event_id))
+                {
+                    ESP_LOGI(TAG,
+                             "Evento %06u enviado com sucesso!",
+                             event_id);
+                    break;
+                }
+
+                ESP_LOGE(TAG,
+                         "Falha no evento %06u. Nova tentativa em 10 segundos",
+                         event_id);
+
+                vTaskDelay(pdMS_TO_TICKS(10000));
+            }
+        }
+    }
 }
-
 /* ============================================================
  * INICIA UPLOAD DE EVENTO
  * ============================================================ */
 
 void cloud_upload_start_event(unsigned int event_id)
 {
-    unsigned int *event_id_ptr = malloc(sizeof(unsigned int));
-
-    if (event_id_ptr == NULL)
+    if (s_event_queue == NULL)
     {
-        ESP_LOGE(TAG, "Falha ao alocar memoria para event_id");
+        ESP_LOGE(TAG, "Fila FTP nao inicializada");
         return;
     }
 
-    *event_id_ptr = event_id;
-
-    BaseType_t result = xTaskCreate(
-        cloud_upload_event_task,
-        "ftp_event",
-        FTP_TASK_STACK_SIZE,
-        event_id_ptr,
-        FTP_TASK_PRIORITY,
-        NULL
-    );
-
-    if (result != pdPASS)
+    if (xQueueSend(s_event_queue, &event_id, 0) != pdTRUE)
     {
-        ESP_LOGE(TAG, "Falha ao criar task FTP");
-        free(event_id_ptr);
+        ESP_LOGE(TAG, "Fila FTP cheia! Evento %06u nao enfileirado",
+                 event_id);
         return;
     }
 
-    ESP_LOGI(TAG, "Task FTP criada para evento %06u", event_id);
+    ESP_LOGI(TAG, "Evento %06u adicionado a fila FTP", event_id);
 }
 
 /* ============================================================

@@ -16,15 +16,10 @@ static const char *TAG = "EVENT";
 
 static bool alarme_ativo = false;
 
-/*
- * TESTE PROVISORIO
- *
- * O alarme sera desligado automaticamente
- * apos 10 segundos.
- */
-#define TEMPO_ALARME_TESTE_MS 10000
+#define TEMPO_RELE_MS (60ULL * 60ULL * 1000ULL)
 
-static int64_t tempo_alarme_inicio_us = 0;
+static int64_t tempo_rele_inicio_us = 0;
+static bool evento_em_processamento = false;
 
 
 /* ============================================================
@@ -34,55 +29,34 @@ static int64_t tempo_alarme_inicio_us = 0;
 void event_manager_init(void)
 {
     alarme_ativo = false;
-    tempo_alarme_inicio_us = 0;
+    tempo_rele_inicio_us = 0;
+    evento_em_processamento = false;
 
-    ESP_LOGI(
-        TAG,
-        "Event Manager inicializado"
-    );
+    ESP_LOGI(TAG, "Event Manager inicializado");
 }
 
-
 /* ============================================================
- * ACIONAMENTO MANUAL
+ * ACIONAMENTO 
  * ============================================================ */
 
 void event_manager_acionar(void)
 {
     if (alarme_ativo)
     {
-        ESP_LOGW(
-            TAG,
-            "Acionar solicitado, mas alarme ja esta ativo"
-        );
-
+        ESP_LOGW(TAG, "Rele ja esta ativo. Mantendo temporizador.");
         return;
     }
 
-
-    ESP_LOGW(
-        TAG,
-        "========================================"
-    );
-
-    ESP_LOGW(
-        TAG,
-        "       ALARME ACIONADO MANUALMENTE"
-    );
-
-    ESP_LOGW(
-        TAG,
-        "========================================"
-    );
-
+    ESP_LOGW(TAG, "ALARME ACIONADO");
 
     alarme_ativo = true;
 
-    tempo_alarme_inicio_us = esp_timer_get_time();
+    tempo_rele_inicio_us = esp_timer_get_time();
 
     relay_on();
-}
 
+    ESP_LOGI(TAG, "Temporizador de 1 hora iniciado");
+}
 
 /* ============================================================
  * PESSOA DETECTADA
@@ -90,16 +64,14 @@ void event_manager_acionar(void)
 
 void event_manager_pessoa_detectada(void)
 {
-    if (alarme_ativo)
-    {
-        ESP_LOGW(
-            TAG,
-            "Pessoa detectada, mas alarme ja esta ativo"
-        );
 
-        return;
-    }
+if (evento_em_processamento)
+{
+    ESP_LOGW(TAG, "Evento ja esta sendo processado");
+    return;
+}
 
+evento_em_processamento = true;
 
     ESP_LOGW(
         TAG,
@@ -117,12 +89,7 @@ void event_manager_pessoa_detectada(void)
     );
 
 
-    alarme_ativo = true;
 
-    /*
-     * Inicia contador do alarme.
-     */
-    tempo_alarme_inicio_us = esp_timer_get_time();
 
 
     time_t event_timestamp;
@@ -130,12 +97,7 @@ void event_manager_pessoa_detectada(void)
     time(&event_timestamp);
 
 
-    /* --------------------------------------------------------
-     * Liga rele
-     * -------------------------------------------------------- */
-
-    relay_on();
-
+   event_manager_acionar();
 
     /* --------------------------------------------------------
      * Envia alerta MQTT
@@ -171,15 +133,15 @@ void event_manager_pessoa_detectada(void)
         );
 
 
-    if (!captura_ok)
-    {
-        ESP_LOGE(
-            TAG,
-            "Falha durante a captura das fotos"
-        );
+if (!captura_ok)
+{
+    ESP_LOGE(TAG, "Falha durante a captura das fotos");
 
-        return;
-    }
+    detector_reset();
+    evento_em_processamento = false;
+
+    return;
+}
 
 
     ESP_LOGI(
@@ -206,9 +168,12 @@ void event_manager_pessoa_detectada(void)
     );
 
 
-    cloud_upload_start_event(
-        event_id
-    );
+cloud_upload_start_event(event_id);
+
+detector_reset();
+evento_em_processamento = false;
+
+ESP_LOGI(TAG, "Detector rearmado para nova deteccao");
 
 
     ESP_LOGI(
@@ -225,63 +190,30 @@ void event_manager_pessoa_detectada(void)
 
 void event_manager_process(void)
 {
-    /*
-     * TESTE PROVISORIO
-     *
-     * Desliga automaticamente o alarme
-     * apos 10 segundos.
-     */
-
     if (!alarme_ativo)
     {
         return;
     }
 
-
     int64_t agora_us = esp_timer_get_time();
 
     int64_t tempo_decorrido_us =
-        agora_us - tempo_alarme_inicio_us;
-
+        agora_us - tempo_rele_inicio_us;
 
     if (tempo_decorrido_us >=
-        ((int64_t)TEMPO_ALARME_TESTE_MS * 1000))
+        ((int64_t)TEMPO_RELE_MS * 1000LL))
     {
-        ESP_LOGW(
-            TAG,
-            "========================================"
-        );
-
-        ESP_LOGW(
-            TAG,
-            " ALARME TESTE: 10 SEGUNDOS COMPLETOS"
-        );
-
-        ESP_LOGW(
-            TAG,
-            " DESARMANDO AUTOMATICAMENTE"
-        );
-
-        ESP_LOGW(
-            TAG,
-            "========================================"
-        );
-
+        ESP_LOGW(TAG, "Uma hora completa. Desligando rele.");
 
         relay_off();
 
         alarme_ativo = false;
 
-        tempo_alarme_inicio_us = 0;
+        tempo_rele_inicio_us = 0;
 
-
-        /*
-         * Libera o detector para uma nova deteccao.
-         */
         detector_reset();
     }
 }
-
 
 /* ============================================================
  * DESARMAR
@@ -324,7 +256,7 @@ void event_manager_desarmar(void)
 
     alarme_ativo = false;
 
-    tempo_alarme_inicio_us = 0;
+    tempo_rele_inicio_us = 0;
 
     /*
      * Libera o detector para uma nova deteccao.
