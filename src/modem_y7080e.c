@@ -45,6 +45,7 @@ static const char *TAG = "MODEM_Y7080E";
 
 static bool uart_initialized = false;
 static bool modem_connected = false;
+static volatile bool mqtt_connected = false;
 
 static SemaphoreHandle_t modem_mutex = NULL;
 
@@ -172,14 +173,56 @@ static esp_err_t modem_send_at(
         total += copiar;
         response[total] = '\0';
 
-        if (strstr(response, "\nOK\r\n") != NULL ||
-            strstr(response, "\r\nOK\r\n") != NULL ||
-            strstr(response, "\nERROR\r\n") != NULL ||
-            strstr(response, "\r\nERROR\r\n") != NULL)
-        {
-            break;
-        }
+        /* Detecta confirmação de conexão MQTT */
+char *mqtt_ack = strstr(response, "+MQCONNACK:");
 
+if (mqtt_ack != NULL)
+{
+    int client_id = -1;
+    int result = -1;
+
+    if (sscanf(mqtt_ack, "+MQCONNACK: %d,%d", &client_id, &result) == 2)
+    {
+        if (client_id == 0 && result == 0)
+        {
+            mqtt_connected = true;
+            ESP_LOGI(TAG, "Conexao MQTT confirmada pelo broker!");
+        }
+        else
+        {
+            mqtt_connected = false;
+            ESP_LOGE(TAG, "MQCONNACK falhou: cliente=%d, resultado=%d",
+                     client_id, result);
+        }
+    }
+}
+
+bool comando_mqtt_connect = strstr(command, "AT+MQCON=") != NULL;
+
+bool erro_at =
+    strstr(response, "\nERROR\r\n") != NULL ||
+    strstr(response, "\r\nERROR\r\n") != NULL;
+
+bool ok_at =
+    strstr(response, "\nOK\r\n") != NULL ||
+    strstr(response, "\r\nOK\r\n") != NULL;
+
+if (erro_at)
+{
+    break;
+}
+
+if (comando_mqtt_connect)
+{
+    if (mqtt_connected)
+    {
+        break;
+    }
+}
+else if (ok_at)
+{
+    break;
+}
         if (total >= response_size - 1)
             break;
     }
@@ -680,7 +723,7 @@ if (err != ESP_OK)
 ESP_LOGI(TAG, "Criando cliente MQTT nativo...");
 
 err = modem_send_at(
-    "AT+MQNEW=200.234.212.167,1883,5000,200",
+    "AT+MQNEW=200.234.212.167,1883,5000,1000",
     response,
     sizeof(response),
     30000
@@ -697,6 +740,8 @@ if (err != ESP_OK)
 /* 8. Conecta ao broker MQTT */
 
 ESP_LOGI(TAG, "Conectando ao broker MQTT...");
+
+mqtt_connected = false;
 
 err = modem_send_at(
     "AT+MQCON=0,4,\"unimec-camera-01\",60,1,1,\"unimec/test/will\",0,0,2,\"3838\",\"unimec\",\"UniMec@MQTT2026!\"",

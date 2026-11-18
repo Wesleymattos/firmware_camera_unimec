@@ -290,27 +290,23 @@ void app_main(void)
 
 if (conectado && !mqtt_iniciado)
 {
-    ESP_LOGI(TAG, "Modem conectado! Inicializando MQTT...");
-
-    // mqtt_manager_init();
+    ESP_LOGI(TAG, "Modem conectado! Enviando comando ON...");
 
     esp_err_t mqtt_test = modem_y7080e_mqtt_publish(
-        "unimec/test",
-        "Teste Y7080E"
+        "unimec/camera-01/command",
+        "ON"
     );
 
     if (mqtt_test == ESP_OK)
     {
-        ESP_LOGI(TAG, "Teste MQTT enviado com sucesso!");
+        ESP_LOGI(TAG, "Comando ON publicado com sucesso!");
     }
     else
     {
-        ESP_LOGE(TAG, "Falha no teste MQTT!");
+        ESP_LOGE(TAG, "Falha ao publicar comando ON!");
     }
 
     mqtt_iniciado = true;
-
-    ESP_LOGI(TAG, "MQTT inicializado!");
 }
 
 
