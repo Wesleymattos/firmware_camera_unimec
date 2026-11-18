@@ -297,15 +297,15 @@ if (conectado && !mqtt_iniciado)
         "ON"
     );
 
-    if (mqtt_test == ESP_OK)
-    {
-        ESP_LOGI(TAG, "Comando ON publicado com sucesso!");
-    }
-    else
-    {
-        ESP_LOGE(TAG, "Falha ao publicar comando ON!");
-    }
-
+if (mqtt_test == ESP_OK)
+{
+    ESP_LOGI(TAG, "Comando ON publicado com sucesso!");
+    mqtt_iniciado = true;
+}
+else
+{
+    ESP_LOGE(TAG, "Falha ao publicar comando ON!");
+}
     mqtt_iniciado = true;
 }
 

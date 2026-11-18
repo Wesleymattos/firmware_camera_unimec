@@ -759,6 +759,28 @@ if (err != ESP_OK)
 }
 
 
+/* 9. Assina o topico de comandos MQTT */
+
+ESP_LOGI(TAG, "Assinando topico de comandos MQTT...");
+
+err = modem_send_at(
+    "AT+MQSUB=0,\"unimec/camera-01/command\",0",
+    response,
+    sizeof(response),
+    30000
+);
+
+
+
+ESP_LOGI(TAG, "Resultado MQTT SUB: %s", response);
+
+if (err != ESP_OK)
+{
+    ESP_LOGE(TAG, "Falha ao assinar topico MQTT");
+    goto modem_error;
+}
+
+
         /* DIAGNOSTICO DE REDE */
 ESP_LOGI(TAG, "========== DIAGNOSTICO DE REDE ==========");
 
