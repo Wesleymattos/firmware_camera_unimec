@@ -628,18 +628,21 @@ ESP_LOGW(TAG, "=================================");
 
 
 
-/* TESTE DE SUPORTE MQTT NATIVO */
 
-ESP_LOGI(TAG, "Testando comandos MQTT do Y7080E...");
+
+/* DIAGNOSTICO DE BANDAS NB-IOT */
+
+ESP_LOGI(TAG, "Consultando bandas NB-IOT...");
 
 err = modem_send_at(
-    "AT+MQNEW=200.234.212.167,1883,5000,200",
+    "AT+NBAND?",
     response,
     sizeof(response),
     MODEM_AT_TIMEOUT
 );
 
-ESP_LOGI(TAG, "Resultado do teste MQTT: %s", response);
+ESP_LOGI(TAG, "Bandas NB-IOT: %s", response);
+
 
     /* 4. Aguarda registro celular */
 
@@ -670,20 +673,45 @@ if (err != ESP_OK)
     goto modem_error;
 
 
-/* 7. TESTE MQTT NATIVO */
 
-ESP_LOGI(TAG, "Testando MQTT nativo...");
+
+/* 7. Cria cliente MQTT nativo */
+
+ESP_LOGI(TAG, "Criando cliente MQTT nativo...");
 
 err = modem_send_at(
     "AT+MQNEW=200.234.212.167,1883,5000,200",
     response,
     sizeof(response),
-    15000
+    30000
 );
 
-ESP_LOGI(TAG, "Resultado MQTT: %s", response);
+ESP_LOGI(TAG, "Resultado MQTT NEW: %s", response);
 
-        
+if (err != ESP_OK)
+{
+    ESP_LOGE(TAG, "Falha ao criar cliente MQTT");
+    goto modem_error;
+}
+
+/* 8. Conecta ao broker MQTT */
+
+ESP_LOGI(TAG, "Conectando ao broker MQTT...");
+
+err = modem_send_at(
+    "AT+MQCON=0,4,\"unimec-camera-01\",60,1,1,\"unimec/test/will\",0,0,2,\"3838\",\"unimec\",\"UniMec@MQTT2026!\"",
+    response,
+    sizeof(response),
+    30000
+);
+
+ESP_LOGI(TAG, "Resultado MQTT CON: %s", response);
+
+if (err != ESP_OK)
+{
+    ESP_LOGE(TAG, "Falha na conexao MQTT");
+    goto modem_error;
+}
 
 
         /* DIAGNOSTICO DE REDE */
@@ -1247,7 +1275,72 @@ bool modem_y7080e_is_connected(void)
     return modem_connected;
 }
 
+/* =========================================================
+   PUBLICAR MQTT NATIVO PELO Y7080E
+   ========================================================= */
 
+esp_err_t modem_y7080e_mqtt_publish(
+    const char *topic,
+    const char *message
+)
+{
+    if (topic == NULL || message == NULL || !modem_connected)
+        return ESP_ERR_INVALID_ARG;
+
+    size_t message_len = strlen(message);
+
+    if (message_len == 0 || message_len > 1000)
+        return ESP_ERR_INVALID_SIZE;
+
+    char hex_data[2001];
+    char command[2300];
+    char response[MODEM_AT_RESPONSE_SIZE];
+
+    /* Converte a mensagem para hexadecimal */
+    for (size_t i = 0; i < message_len; i++)
+    {
+        snprintf(
+            &hex_data[i * 2],
+            3,
+            "%02X",
+            (unsigned char)message[i]
+        );
+    }
+
+    hex_data[message_len * 2] = '\0';
+
+    /* Monta comando MQTT PUB */
+    snprintf(
+        command,
+        sizeof(command),
+        "AT+MQPUB=0,\"%s\",0,0,0,%u,%s",
+        topic,
+        (unsigned int)message_len,
+        hex_data
+    );
+
+    xSemaphoreTake(modem_mutex, portMAX_DELAY);
+
+    esp_err_t err = modem_send_at(
+        command,
+        response,
+        sizeof(response),
+        30000
+    );
+
+    xSemaphoreGive(modem_mutex);
+
+    if (err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "MQTT publicado: %s", topic);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Falha ao publicar MQTT: %s", topic);
+    }
+
+    return err;
+}
 
 #include <stdio.h>
 #include <string.h>

@@ -121,7 +121,7 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_ERROR_CHECK(esp_netif_init());
+    //ESP_ERROR_CHECK(esp_netif_init());
 
     err = esp_event_loop_create_default();
 
@@ -137,11 +137,11 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_LOGI(TAG, "Inicializando rele...");
-    relay_init();
+    //ESP_LOGI(TAG, "Inicializando rele...");
+    //relay_init();
 
-    ESP_LOGI(TAG, "Inicializando LED...");
-    led_status_init();
+    //ESP_LOGI(TAG, "Inicializando LED...");
+    //led_status_init();
 
 
     /*
@@ -150,8 +150,8 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_LOGI(TAG, "Inicializando cartao SD...");
-    sd_storage_init();
+    //ESP_LOGI(TAG, "Inicializando cartao SD...");
+    //sd_storage_init();
 
 
     /*
@@ -160,8 +160,8 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_LOGI(TAG, "Inicializando camera OV3660...");
-    camera_init();
+    //ESP_LOGI(TAG, "Inicializando camera OV3660...");
+    //camera_init();
 
 
     /*
@@ -170,8 +170,8 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_LOGI(TAG, "Inicializando HC-SR501...");
-    hc_sr501_init();
+    //ESP_LOGI(TAG, "Inicializando HC-SR501...");
+    //hc_sr501_init();
 
 
     /*
@@ -180,8 +180,8 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_LOGI(TAG, "Inicializando detector...");
-    detector_init();
+    //ESP_LOGI(TAG, "Inicializando detector...");
+    //detector_init();
 
 
     /*
@@ -190,8 +190,8 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_LOGI(TAG, "Inicializando Event Camera...");
-    event_camera_init();
+    //ESP_LOGI(TAG, "Inicializando Event Camera...");
+    //event_camera_init();
 
 
     /*
@@ -200,11 +200,11 @@ void app_main(void)
      * ========================================================
      */
 
-    ESP_LOGI(TAG, "Inicializando Event Manager...");
-    event_manager_init();
+    //ESP_LOGI(TAG, "Inicializando Event Manager...");
+    //event_manager_init();
 
-    ESP_LOGI(TAG, "Inicializando gerenciador FTP...");
-    cloud_upload_init();
+    //ESP_LOGI(TAG, "Inicializando gerenciador FTP...");
+    //cloud_upload_init();
 
 
     /*
@@ -250,22 +250,15 @@ void app_main(void)
 
 
     
-    /*
-     * ========================================================
-     * 13. MQTT
-     * ========================================================
-     *
-     * A inicializacao sera feita apos confirmar a conectividade.
-     */
-
-    // mqtt_manager_init();
-
+   
 
     /*
      * ========================================================
      * 14. LOOP PRINCIPAL
      * ========================================================
      */
+
+       static bool mqtt_iniciado = false;
 
     while (1)
     {
@@ -291,22 +284,51 @@ void app_main(void)
             estado_anterior = conectado;
         }
 
+/*
+ * Inicializacao do MQTT apos conexao do modem
+ */
+
+if (conectado && !mqtt_iniciado)
+{
+    ESP_LOGI(TAG, "Modem conectado! Inicializando MQTT...");
+
+    // mqtt_manager_init();
+
+    esp_err_t mqtt_test = modem_y7080e_mqtt_publish(
+        "unimec/test",
+        "Teste Y7080E"
+    );
+
+    if (mqtt_test == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Teste MQTT enviado com sucesso!");
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Falha no teste MQTT!");
+    }
+
+    mqtt_iniciado = true;
+
+    ESP_LOGI(TAG, "MQTT inicializado!");
+}
+
 
         /*
          * Detector de pessoa / movimento
          */
-
+/*
         if (detector_pessoa_detectada())
         {
             event_manager_pessoa_detectada();
         }
 
-
+*/
         /*
          * Processamento dos eventos
          */
 
-        event_manager_process();
+       // event_manager_process();
 
 
         /*
@@ -325,4 +347,5 @@ void app_main(void)
 
         vTaskDelay(pdMS_TO_TICKS(200));
     }
+
 }

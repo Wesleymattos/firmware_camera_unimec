@@ -39,4 +39,10 @@ size_t modem_y7080e_socket_available(int socket_id);
 
 esp_err_t modem_y7080e_socket_close(int socket_id);
 
+
+esp_err_t modem_y7080e_mqtt_publish(
+    const char *topic,
+    const char *message
+);
+
 #endif
