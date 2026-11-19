@@ -437,8 +437,24 @@ else if (ok_at)
 
     modem_parse_urc(response);
 
+if (strncmp(command, "AT+NSOSD=", 9) == 0)
+{
+    int socket_id = -1;
+    unsigned int bytes = 0;
+
+    sscanf(command, "AT+NSOSD=%d,%u", &socket_id, &bytes);
+
+    ESP_LOGD(TAG,
+             "FTP: enviando socket=%d, bytes=%u",
+             socket_id,
+             bytes);
+}
+else
+{
     ESP_LOGI(TAG, "AT: %s", command);
-    ESP_LOGI(TAG, "Resposta: %s", response);
+}
+
+ESP_LOGI(TAG, "Resposta: %s", response);
 
     if (strstr(response, "ERROR") != NULL)
         return ESP_FAIL;
