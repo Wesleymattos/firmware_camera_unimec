@@ -16,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "event_manager.h"
 
 /* =========================================================
    CONFIGURACOES
@@ -51,18 +52,24 @@ static SemaphoreHandle_t modem_mutex = NULL;
 
 static size_t socket_pending[2] = {0, 0};
 
+static int hex_to_byte(char high, char low);
 
 
 static void modem_parse_urc(const char *data)
 {
     const char *p = data;
 
+    /* =========================================
+       SOCKET TCP
+       ========================================= */
+
     while ((p = strstr(p, "+NSONMI:")) != NULL)
     {
         int socket_id;
         unsigned int length;
 
-        if (sscanf(p, "+NSONMI:%d,%u", &socket_id, &length) == 2)
+        if (sscanf(p, "+NSONMI:%d,%u",
+                   &socket_id, &length) == 2)
         {
             if (socket_id >= 0 && socket_id < 2)
             {
@@ -77,7 +84,147 @@ static void modem_parse_urc(const char *data)
 
         p += strlen("+NSONMI:");
     }
+
+    /* =========================================
+       MQTT - CONFIRMACAO DE ASSINATURA
+       ========================================= */
+
+    p = data;
+
+    while ((p = strstr(p, "+MQSUBACK:")) != NULL)
+    {
+        ESP_LOGI(TAG, "MQTT SUBACK recebido: %s", p);
+
+        p += strlen("+MQSUBACK:");
+    }
+
+       /* =========================================
+       MQTT - MENSAGEM RECEBIDA
+       ========================================= */
+
+    p = data;
+
+    while ((p = strstr(p, "+MQPUB:")) != NULL)
+    {
+        int client_id;
+        int qos, retained, dup, message_len;
+        int consumed = 0;
+
+        char topic[128] = {0};
+        char message[32] = {0};
+
+        int parsed = sscanf(
+            p,
+            "+MQPUB:%d,%127[^,],%d,%d,%d,%d,%n",
+            &client_id,
+            topic,
+            &qos,
+            &retained,
+            &dup,
+            &message_len,
+            &consumed
+        );
+
+        if (parsed == 6 &&
+            consumed > 0 &&
+            message_len > 0 &&
+            message_len < sizeof(message))
+        {
+            /* Remove aspas do tópico, se existirem */
+            size_t topic_len = strlen(topic);
+
+            if (topic_len >= 2 &&
+                topic[0] == '"' &&
+                topic[topic_len - 1] == '"')
+            {
+                memmove(topic, topic + 1, topic_len - 2);
+                topic[topic_len - 2] = '\0';
+            }
+
+const char *hex = p + consumed;
+
+bool hex_valido = true;
+
+size_t hex_available = strlen(hex);
+
+if (hex_available < (size_t)(message_len * 2))
+{
+    hex_valido = false;
 }
+
+            for (int i = 0; i < message_len * 2; i++)
+            {
+                char c = hex[i];
+
+                if (!((c >= '0' && c <= '9') ||
+                      (c >= 'A' && c <= 'F') ||
+                      (c >= 'a' && c <= 'f')))
+                {
+                    hex_valido = false;
+                    break;
+                }
+            }
+
+            if (hex_valido)
+            {
+                for (int i = 0; i < message_len; i++)
+                {
+                    message[i] = (char)hex_to_byte(
+                        hex[i * 2],
+                        hex[i * 2 + 1]
+                    );
+                }
+
+                message[message_len] = '\0';
+
+                ESP_LOGI(
+                    TAG,
+                    "MQTT recebido: topico=%s, mensagem=%s",
+                    topic,
+                    message
+                );
+
+                if (strcmp(topic, "unimec/camera-01/command") == 0)
+                {
+                    if (strcmp(message, "ON") == 0)
+                    {
+                        ESP_LOGW(TAG, "Comando MQTT ON recebido!");
+                        event_manager_acionar();
+                    }
+                    else if (strcmp(message, "OFF") == 0)
+                    {
+                        ESP_LOGW(TAG, "Comando MQTT OFF recebido!");
+                        event_manager_desarmar();
+                    }
+                    else
+                    {
+                        ESP_LOGW(TAG, "Comando MQTT desconhecido");
+                    }
+                }
+            }
+            else
+            {
+                ESP_LOGW(TAG, "Payload MQTT hexadecimal invalido");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "Cabecalho MQTT invalido");
+        }
+
+        p += strlen("+MQPUB:");
+    }
+    /* =========================================
+       MQTT - DESCONECTADO
+       ========================================= */
+
+    if (strstr(data, "+MQDISON:") != NULL)
+    {
+        ESP_LOGW(TAG, "Modem informou desconexao MQTT!");
+        mqtt_connected = false;
+    }
+}
+
 
 
 
@@ -97,6 +244,67 @@ size_t modem_y7080e_socket_available(int socket_id)
     return pending;
 }
 
+
+void modem_y7080e_process_mqtt(void)
+{
+    static char pending[MODEM_AT_RESPONSE_SIZE];
+    static size_t pending_len = 0;
+
+    if (!uart_initialized || modem_mutex == NULL)
+        return;
+
+    if (xSemaphoreTake(modem_mutex, 0) != pdTRUE)
+        return;
+
+    uint8_t buffer[256];
+
+    int len = uart_read_bytes(
+        MODEM_Y7080E_UART,
+        buffer,
+        sizeof(buffer),
+        0
+    );
+
+    if (len > 0)
+    {
+        if (pending_len + len >= sizeof(pending))
+        {
+            ESP_LOGW(TAG, "Buffer MQTT cheio. Limpando dados pendentes.");
+            pending_len = 0;
+        }
+
+        memcpy(&pending[pending_len], buffer, len);
+        pending_len += len;
+
+        pending[pending_len] = '\0';
+
+        char *newline;
+
+        while ((newline = memchr(pending, '\n', pending_len)) != NULL)
+        {
+            size_t line_len = (size_t)(newline - pending) + 1;
+
+            char line[MODEM_AT_RESPONSE_SIZE];
+
+            memcpy(line, pending, line_len);
+            line[line_len] = '\0';
+
+            modem_parse_urc(line);
+
+            pending_len -= line_len;
+
+            memmove(
+                pending,
+                pending + line_len,
+                pending_len
+            );
+
+            pending[pending_len] = '\0';
+        }
+    }
+
+    xSemaphoreGive(modem_mutex);
+}
 
 
 /* =========================================================
@@ -315,7 +523,7 @@ while ((p = strstr(p, "+CEREG:")) != NULL)
     {
         // A consulta AT+CEREG? está retornando n=3.
         // Ignora URCs e valores que não são status válidos.
-        if (n == 3 && s >= 0 && s <= 5)
+        if (s >= 0 && s <= 5)
         {
             stat = s;
             status_encontrado = true;

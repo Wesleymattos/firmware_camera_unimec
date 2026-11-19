@@ -45,4 +45,6 @@ esp_err_t modem_y7080e_mqtt_publish(
     const char *message
 );
 
+void modem_y7080e_process_mqtt(void);
+
 #endif

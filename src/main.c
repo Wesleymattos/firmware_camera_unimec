@@ -137,11 +137,11 @@ void app_main(void)
      * ========================================================
      */
 
-    //ESP_LOGI(TAG, "Inicializando rele...");
-    //relay_init();
+    ESP_LOGI(TAG, "Inicializando rele...");
+    relay_init();
 
-    //ESP_LOGI(TAG, "Inicializando LED...");
-    //led_status_init();
+    ESP_LOGI(TAG, "Inicializando LED...");
+    led_status_init();
 
 
     /*
@@ -150,8 +150,8 @@ void app_main(void)
      * ========================================================
      */
 
-    //ESP_LOGI(TAG, "Inicializando cartao SD...");
-    //sd_storage_init();
+    ESP_LOGI(TAG, "Inicializando cartao SD...");
+    sd_storage_init();
 
 
     /*
@@ -160,8 +160,8 @@ void app_main(void)
      * ========================================================
      */
 
-    //ESP_LOGI(TAG, "Inicializando camera OV3660...");
-    //camera_init();
+    ESP_LOGI(TAG, "Inicializando camera OV3660...");
+    camera_init();
 
 
     /*
@@ -170,8 +170,8 @@ void app_main(void)
      * ========================================================
      */
 
-    //ESP_LOGI(TAG, "Inicializando HC-SR501...");
-    //hc_sr501_init();
+    ESP_LOGI(TAG, "Inicializando HC-SR501...");
+    hc_sr501_init();
 
 
     /*
@@ -181,7 +181,7 @@ void app_main(void)
      */
 
     //ESP_LOGI(TAG, "Inicializando detector...");
-    //detector_init();
+    detector_init();
 
 
     /*
@@ -191,7 +191,7 @@ void app_main(void)
      */
 
     //ESP_LOGI(TAG, "Inicializando Event Camera...");
-    //event_camera_init();
+    event_camera_init();
 
 
     /*
@@ -200,11 +200,11 @@ void app_main(void)
      * ========================================================
      */
 
-    //ESP_LOGI(TAG, "Inicializando Event Manager...");
-    //event_manager_init();
+    ESP_LOGI(TAG, "Inicializando Event Manager...");
+    event_manager_init();
 
     //ESP_LOGI(TAG, "Inicializando gerenciador FTP...");
-    //cloud_upload_init();
+    cloud_upload_init();
 
 
     /*
@@ -258,7 +258,7 @@ void app_main(void)
      * ========================================================
      */
 
-       static bool mqtt_iniciado = false;
+       
 
     while (1)
     {
@@ -269,6 +269,11 @@ void app_main(void)
         static bool estado_anterior = false;
 
         bool conectado = modem_y7080e_is_connected();
+
+        if (conectado)
+{
+    modem_y7080e_process_mqtt();
+}
 
         if (conectado != estado_anterior)
         {
@@ -284,47 +289,24 @@ void app_main(void)
             estado_anterior = conectado;
         }
 
-/*
- * Inicializacao do MQTT apos conexao do modem
- */
 
-if (conectado && !mqtt_iniciado)
-{
-    ESP_LOGI(TAG, "Modem conectado! Enviando comando ON...");
-
-    esp_err_t mqtt_test = modem_y7080e_mqtt_publish(
-        "unimec/camera-01/command",
-        "ON"
-    );
-
-if (mqtt_test == ESP_OK)
-{
-    ESP_LOGI(TAG, "Comando ON publicado com sucesso!");
-    mqtt_iniciado = true;
-}
-else
-{
-    ESP_LOGE(TAG, "Falha ao publicar comando ON!");
-}
-    mqtt_iniciado = true;
-}
 
 
         /*
          * Detector de pessoa / movimento
          */
-/*
+
         if (detector_pessoa_detectada())
         {
             event_manager_pessoa_detectada();
         }
 
-*/
+
         /*
          * Processamento dos eventos
          */
 
-       // event_manager_process();
+       event_manager_process();
 
 
         /*
@@ -334,11 +316,7 @@ else
         // system_info_log();
 
 
-        /*
-         * Modem legado
-         */
-
-        // modem_process();
+     
 
 
         vTaskDelay(pdMS_TO_TICKS(200));
