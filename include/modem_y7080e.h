@@ -47,4 +47,7 @@ esp_err_t modem_y7080e_mqtt_publish(
 
 void modem_y7080e_process_mqtt(void);
 
+/* Identificação única do equipamento */
+const char *modem_y7080e_get_imei(void);
+
 #endif

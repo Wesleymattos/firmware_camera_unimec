@@ -47,6 +47,10 @@ static const char *TAG = "MODEM_Y7080E";
 static bool uart_initialized = false;
 static bool modem_connected = false;
 static volatile bool mqtt_connected = false;
+static char modem_imei[16] = {0};
+static char mqtt_client_id[48] = {0};
+static char mqtt_command_topic[96] = {0};
+static char mqtt_will_topic[96] = {0};
 
 static SemaphoreHandle_t modem_mutex = NULL;
 
@@ -184,7 +188,7 @@ if (hex_available < (size_t)(message_len * 2))
                     message
                 );
 
-                if (strcmp(topic, "unimec/camera-01/command") == 0)
+                if (strcmp(topic, mqtt_command_topic) == 0)
                 {
                     if (strcmp(message, "ON") == 0)
                     {
@@ -463,6 +467,88 @@ ESP_LOGI(TAG, "Resposta: %s", response);
         return ESP_OK;
 
     return ESP_ERR_TIMEOUT;
+}
+
+
+static esp_err_t modem_read_imei(void)
+{
+    char response[MODEM_AT_RESPONSE_SIZE] = {0};
+
+    esp_err_t err = modem_send_at(
+        "AT+CGSN",
+        response,
+        sizeof(response),
+        MODEM_AT_TIMEOUT
+    );
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao consultar identificador do modem");
+        return err;
+    }
+
+    char *start = response;
+
+    while (*start == '\r' || *start == '\n' || *start == ' ') {
+        start++;
+    }
+
+    char *end = start;
+
+    while (*end != '\0' &&
+           *end != '\r' &&
+           *end != '\n' &&
+           *end != ' ') {
+        end++;
+    }
+
+    size_t len = end - start;
+
+    if (len < 5 || len >= sizeof(modem_imei)) {
+        ESP_LOGE(TAG, "Identificador invalido: %s", start);
+        return ESP_FAIL;
+    }
+
+    memcpy(modem_imei, start, len);
+    modem_imei[len] = '\0';
+
+    ESP_LOGI(TAG, "Identificador do modem: %s", modem_imei);
+
+    return ESP_OK;
+}
+
+static esp_err_t modem_configure_identity(void)
+{
+    if (modem_imei[0] == '\0') {
+        ESP_LOGE(TAG, "Identificador do modem indisponivel");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    snprintf(
+        mqtt_client_id,
+        sizeof(mqtt_client_id),
+        "unimec-camera-%s",
+        modem_imei
+    );
+
+    snprintf(
+        mqtt_command_topic,
+        sizeof(mqtt_command_topic),
+        "unimec/camera/%s/command",
+        modem_imei
+    );
+
+    snprintf(
+        mqtt_will_topic,
+        sizeof(mqtt_will_topic),
+        "unimec/camera/%s/will",
+        modem_imei
+    );
+
+    ESP_LOGI(TAG, "MQTT Client ID: %s", mqtt_client_id);
+    ESP_LOGI(TAG, "MQTT comando: %s", mqtt_command_topic);
+    ESP_LOGI(TAG, "MQTT Will: %s", mqtt_will_topic);
+
+    return ESP_OK;
 }
 
 
@@ -808,6 +894,22 @@ if (err != ESP_OK)
 
 ESP_LOGI(TAG, "Comunicacao UART em 115200 baud confirmada!");
 
+/* Consulta identificacao unica do equipamento */
+ESP_LOGI(TAG, "Consultando IMEI do modem...");
+
+err = modem_read_imei();
+
+if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Nao foi possivel identificar o equipamento");
+    goto modem_error;
+}
+
+err = modem_configure_identity();
+
+if (err != ESP_OK) {
+    goto modem_error;
+}
+
 /* CONSULTA VERSAO DO FIRMWARE */
 ESP_LOGI(TAG, "Consultando firmware do Y7080E...");
 
@@ -967,8 +1069,18 @@ ESP_LOGI(TAG, "Conectando ao broker MQTT...");
 
 mqtt_connected = false;
 
+char mqtt_connect_command[512];
+
+snprintf(
+    mqtt_connect_command,
+    sizeof(mqtt_connect_command),
+    "AT+MQCON=0,4,\"%s\",60,1,1,\"%s\",0,0,2,\"3838\",\"unimec\",\"UniMec@MQTT2026!\"",
+    mqtt_client_id,
+    mqtt_will_topic
+);
+
 err = modem_send_at(
-    "AT+MQCON=0,4,\"unimec-camera-01\",60,1,1,\"unimec/test/will\",0,0,2,\"3838\",\"unimec\",\"UniMec@MQTT2026!\"",
+    mqtt_connect_command,
     response,
     sizeof(response),
     30000
@@ -987,8 +1099,17 @@ if (err != ESP_OK)
 
 ESP_LOGI(TAG, "Assinando topico de comandos MQTT...");
 
+char mqtt_subscribe_command[192];
+
+snprintf(
+    mqtt_subscribe_command,
+    sizeof(mqtt_subscribe_command),
+    "AT+MQSUB=0,\"%s\",0",
+    mqtt_command_topic
+);
+
 err = modem_send_at(
-    "AT+MQSUB=0,\"unimec/camera-01/command\",0",
+    mqtt_subscribe_command,
     response,
     sizeof(response),
     30000
@@ -1566,6 +1687,11 @@ bool modem_y7080e_is_connected(void)
     return modem_connected;
 }
 
+
+const char *modem_y7080e_get_imei(void)
+{
+    return modem_imei;
+}
 /* =========================================================
    PUBLICAR MQTT NATIVO PELO Y7080E
    ========================================================= */
