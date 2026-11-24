@@ -31,7 +31,7 @@ static const char *TAG = "CLOUD_UPLOAD";
 #define FTP_USER            "nemosftp"
 #define FTP_PASSWORD        "UniMec@FTP2026!"
 
-#define DEVICE_NAME         "unimec-camera-01"
+
 #define CAMERA_ROOT_FOLDER  "unimec-cameras"
 
 #define EVENT_PHOTO_COUNT   10
@@ -265,9 +265,10 @@ bool cloud_upload_event(unsigned int event_id)
     bool success = false;
     ftp_client_t ftp;
 
-    char event_folder[32];
-    char local_file[128];
-    char remote_file[32];
+char event_folder[32];
+char local_file[128];
+char remote_file[32];
+char device_folder[32];
 
     ESP_LOGI(TAG, "======================================");
     ESP_LOGI(TAG, "INICIANDO UPLOAD DO EVENTO %06u", event_id);
@@ -312,21 +313,37 @@ bool cloud_upload_event(unsigned int event_id)
 
     ESP_LOGI(TAG, "Login FTP realizado");
 
+
+    /* Identificacao dinamica da camera pelo modem */
+const char *device_id = modem_y7080e_get_imei();
+
+if (device_id == NULL || device_id[0] == '\0')
+{
+    ESP_LOGE(TAG, "Identificador do modem indisponivel");
+    goto cleanup;
+}
+
+snprintf(device_folder, sizeof(device_folder), "%s", device_id);
+
+ESP_LOGI(TAG, "Identificador da camera: %s", device_folder);
+
     /* Diretorio raiz. */
     if (!ftp_entrar_ou_criar_pasta(&ftp, CAMERA_ROOT_FOLDER))
         goto cleanup;
 
-    /* Diretorio do equipamento. */
-    if (!ftp_entrar_ou_criar_pasta(&ftp, DEVICE_NAME))
-        goto cleanup;
+                /* Diretorio individual da camera. */
+                if (!ftp_entrar_ou_criar_pasta(&ftp, device_folder))
+                {
+                    goto cleanup;
+                }
 
-    /* Nome do evento. */
-    snprintf(
-        event_folder,
-        sizeof(event_folder),
-        "event_%06u",
-        event_id
-    );
+                /* Nome do evento. */
+                snprintf(
+                    event_folder,
+                    sizeof(event_folder),
+                    "event_%06u",
+                    event_id
+                );
 
     /* Diretorio do evento. */
     if (!ftp_entrar_ou_criar_pasta(&ftp, event_folder))
@@ -396,7 +413,7 @@ bool cloud_upload_event(unsigned int event_id)
 
     ESP_LOGI(TAG, "======================================");
     ESP_LOGI(TAG, "UPLOAD DO EVENTO CONCLUIDO!");
-    ESP_LOGI(TAG, "Equipamento: %s", DEVICE_NAME);
+    ESP_LOGI(TAG, "Equipamento: %s", device_folder);
     ESP_LOGI(TAG, "Evento: %s", event_folder);
     ESP_LOGI(TAG, "Fotos enviadas: %d", EVENT_PHOTO_COUNT);
     ESP_LOGI(TAG, "Metadata enviada: SIM");
