@@ -16,7 +16,7 @@ static const char *TAG = "EVENT";
 
 static bool alarme_ativo = false;
 
-#define TEMPO_RELE_MS (60ULL * 60ULL * 1000ULL)
+#define TEMPO_RELE_MS (5ULL * 60ULL * 1000ULL)
 
 static int64_t tempo_rele_inicio_us = 0;
 static bool evento_em_processamento = false;
