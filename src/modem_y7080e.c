@@ -1047,6 +1047,47 @@ ESP_LOGI(TAG, "Verificando cartao SIM...");
 
     ESP_LOGI(TAG, "SIM pronto");
 
+
+    /* 3. Desabilita economia de energia PSM */
+
+ESP_LOGI(TAG, "Desabilitando PSM do modem...");
+
+err = modem_send_at(
+    "AT+CPSMS=0",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+if (err != ESP_OK)
+{
+    ESP_LOGE(TAG, "Falha ao desabilitar PSM");
+    goto modem_error;
+}
+
+ESP_LOGI(TAG, "PSM desabilitado com sucesso");
+
+
+
+/* Bloqueia DEEPSLEEP do modem */
+
+ESP_LOGI(TAG, "Ativando WORKLOCK do modem...");
+
+err = modem_send_at(
+    "AT+WORKLOCK=1",
+    response,
+    sizeof(response),
+    MODEM_AT_TIMEOUT
+);
+
+if (err != ESP_OK)
+{
+    ESP_LOGE(TAG, "Falha ao ativar WORKLOCK");
+    goto modem_error;
+}
+
+ESP_LOGI(TAG, "WORKLOCK ativado com sucesso");
+
     /* 3. Configura APN */
 
     ESP_LOGI(TAG, "Configurando APN...");
