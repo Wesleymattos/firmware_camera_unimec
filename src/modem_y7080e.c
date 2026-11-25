@@ -18,6 +18,9 @@
 #include "freertos/semphr.h"
 #include "event_manager.h"
 
+#include <time.h>
+#include <sys/time.h>
+
 /* =========================================================
    CONFIGURACOES
    ========================================================= */
@@ -59,9 +62,90 @@ static size_t socket_pending[2] = {0, 0};
 static int hex_to_byte(char high, char low);
 
 
+static void modem_update_system_time(const char *data)
+{
+    int timezone = 0;
+    int dst = 0;
+    int year, month, day;
+    int hour, minute, second;
+
+    if (sscanf(data,
+               "+CTZEU:%d,%d,%d/%d/%d,%d:%d:%d",
+               &timezone, &dst,
+               &year, &month, &day,
+               &hour, &minute, &second) != 8)
+    {
+        ESP_LOGW(TAG, "Formato CTZEU invalido: %s", data);
+        return;
+    }
+
+    if (year < 2024 || month < 1 || month > 12 ||
+        day < 1 || day > 31 || hour < 0 || hour > 23 ||
+        minute < 0 || minute > 59 || second < 0 || second > 60)
+    {
+        ESP_LOGW(TAG, "Data/hora recebida invalida");
+        return;
+    }
+
+    struct tm utc_time = {0};
+
+    utc_time.tm_year = year - 1900;
+    utc_time.tm_mon = month - 1;
+    utc_time.tm_mday = day;
+    utc_time.tm_hour = hour;
+    utc_time.tm_min = minute;
+    utc_time.tm_sec = second;
+
+    time_t timestamp = timegm(&utc_time);
+
+    if (timestamp < 0)
+    {
+        ESP_LOGE(TAG, "Falha ao converter horario UTC");
+        return;
+    }
+
+    struct timeval tv = {
+        .tv_sec = timestamp,
+        .tv_usec = 0
+    };
+
+    if (settimeofday(&tv, NULL) == 0)
+    {
+        ESP_LOGI(TAG,
+                 "Relogio ESP32 atualizado: %04d-%02d-%02d %02d:%02d:%02d UTC",
+                 year, month, day, hour, minute, second);
+
+        ESP_LOGI(TAG, "Fuso recebido: %d quartos de hora | DST: %d",
+                 timezone, dst);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Falha ao atualizar relogio do ESP32");
+    }
+}
+
+
 static void modem_parse_urc(const char *data)
 {
     const char *p = data;
+
+
+
+        // =========================================
+    // ATUALIZACAO DE DATA E HORA
+    // =========================================
+
+    const char *ctzeu = strstr(data, "+CTZEU:");
+
+    if (ctzeu != NULL)
+    {
+        ESP_LOGI(TAG, "Atualizacao de horario recebida da rede celular");
+
+        ESP_LOGW(TAG, "CTZEU CAPTURADO: %s", ctzeu);
+
+        modem_update_system_time(ctzeu);
+    }
+
 
     /* =========================================
        SOCKET TCP
