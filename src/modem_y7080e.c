@@ -1128,9 +1128,13 @@ if (err != ESP_OK)
 
 
 
-/* 7. Cria cliente MQTT nativo */
 
-ESP_LOGI(TAG, "Criando cliente MQTT nativo...");
+
+/* 7. MQTT OPCIONAL - NAO BLOQUEIA FTP */
+
+ESP_LOGI(TAG, "Tentando inicializar MQTT (opcional)...");
+
+mqtt_connected = false;
 
 err = modem_send_at(
     "AT+MQNEW=200.234.212.167,1883,5000,1000",
@@ -1139,74 +1143,62 @@ err = modem_send_at(
     30000
 );
 
-ESP_LOGI(TAG, "Resultado MQTT NEW: %s", response);
-
-if (err != ESP_OK)
+if (err == ESP_OK)
 {
-    ESP_LOGE(TAG, "Falha ao criar cliente MQTT");
-    goto modem_error;
+    ESP_LOGI(TAG, "Cliente MQTT criado");
+
+    char mqtt_connect_command[512];
+
+    snprintf(
+        mqtt_connect_command,
+        sizeof(mqtt_connect_command),
+        "AT+MQCON=0,4,\"%s\",60,1,1,\"%s\",0,0,2,\"3838\",\"unimec\",\"UniMec@MQTT2026!\"",
+        mqtt_client_id,
+        mqtt_will_topic
+    );
+
+    ESP_LOGI(TAG, "Tentando conectar MQTT...");
+
+    err = modem_send_at(
+        mqtt_connect_command,
+        response,
+        sizeof(response),
+        30000
+    );
+
+    if (err == ESP_OK && mqtt_connected)
+    {
+        ESP_LOGI(TAG, "MQTT conectado!");
+
+        char mqtt_subscribe_command[192];
+
+        snprintf(
+            mqtt_subscribe_command,
+            sizeof(mqtt_subscribe_command),
+            "AT+MQSUB=0,\"%s\",0",
+            mqtt_command_topic
+        );
+
+        err = modem_send_at(
+            mqtt_subscribe_command,
+            response,
+            sizeof(response),
+            30000
+        );
+
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Falha na assinatura MQTT");
+        }
+    }
+    else
+    {
+        ESP_LOGW(TAG, "MQTT indisponivel. Continuando sem MQTT.");
+    }
 }
-
-/* 8. Conecta ao broker MQTT */
-
-ESP_LOGI(TAG, "Conectando ao broker MQTT...");
-
-mqtt_connected = false;
-
-char mqtt_connect_command[512];
-
-snprintf(
-    mqtt_connect_command,
-    sizeof(mqtt_connect_command),
-    "AT+MQCON=0,4,\"%s\",60,1,1,\"%s\",0,0,2,\"3838\",\"unimec\",\"UniMec@MQTT2026!\"",
-    mqtt_client_id,
-    mqtt_will_topic
-);
-
-err = modem_send_at(
-    mqtt_connect_command,
-    response,
-    sizeof(response),
-    30000
-);
-
-ESP_LOGI(TAG, "Resultado MQTT CON: %s", response);
-
-if (err != ESP_OK)
+else
 {
-    ESP_LOGE(TAG, "Falha na conexao MQTT");
-    goto modem_error;
-}
-
-
-/* 9. Assina o topico de comandos MQTT */
-
-ESP_LOGI(TAG, "Assinando topico de comandos MQTT...");
-
-char mqtt_subscribe_command[192];
-
-snprintf(
-    mqtt_subscribe_command,
-    sizeof(mqtt_subscribe_command),
-    "AT+MQSUB=0,\"%s\",0",
-    mqtt_command_topic
-);
-
-err = modem_send_at(
-    mqtt_subscribe_command,
-    response,
-    sizeof(response),
-    30000
-);
-
-
-
-ESP_LOGI(TAG, "Resultado MQTT SUB: %s", response);
-
-if (err != ESP_OK)
-{
-    ESP_LOGE(TAG, "Falha ao assinar topico MQTT");
-    goto modem_error;
+    ESP_LOGW(TAG, "Falha ao criar cliente MQTT. Continuando sem MQTT.");
 }
 
 

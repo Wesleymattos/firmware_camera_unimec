@@ -97,6 +97,18 @@ evento_em_processamento = true;
     time(&event_timestamp);
 
 
+ESP_LOGI(
+    TAG,
+    "TIMESTAMP DO EVENTO: %lld",
+    (long long)event_timestamp
+);
+
+ESP_LOGI(
+    TAG,
+    "STATUS DO RELOGIO: %s",
+    event_timestamp > 1760000000 ? "SINCRONIZADO" : "NAO SINCRONIZADO"
+);
+
    event_manager_acionar();
 
     /* --------------------------------------------------------
