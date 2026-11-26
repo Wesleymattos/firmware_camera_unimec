@@ -1048,8 +1048,6 @@ ESP_LOGI(TAG, "Verificando cartao SIM...");
     ESP_LOGI(TAG, "SIM pronto");
 
 
-    /* 3. Desabilita economia de energia PSM */
-
 ESP_LOGI(TAG, "Desabilitando PSM do modem...");
 
 err = modem_send_at(
@@ -1071,6 +1069,7 @@ ESP_LOGI(TAG, "PSM desabilitado com sucesso");
 
 /* Bloqueia DEEPSLEEP do modem */
 
+/* Impede Deep Sleep */
 ESP_LOGI(TAG, "Ativando WORKLOCK do modem...");
 
 err = modem_send_at(
